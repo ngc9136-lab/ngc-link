@@ -2,76 +2,115 @@
 <html lang="es"><head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0a1526">
 <title>NGC Aeronáutica · Día de la Fuerza Aérea</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800;900&family=Chakra+Petch:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
+:root{
+ --navy0:#0a1526; --navy1:#10243f; --card:#132540; --cardb:#24406b;
+ --gold:#f0d488; --gold2:#c9a24b; --ink:#eaf1fb; --muted:#9fb3d0; --green:#00c853;
+}
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
- background:linear-gradient(160deg,#0b1220 0%,#131c2e 55%,#0b1220 100%);
- color:#eaf0f8;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:28px 18px}
-.wrap{width:100%;max-width:460px;text-align:center}
-.logo{width:92px;height:92px;border-radius:22px;margin:0 auto 14px;
- background:linear-gradient(145deg,#1e2a44,#0e1626);border:1px solid #2a3550;
- display:flex;align-items:center;justify-content:center;font-size:44px;
- box-shadow:0 10px 40px rgba(0,0,0,.5)}
-h1{font-size:24px;font-weight:800;letter-spacing:.5px}
-.sub{color:#8ea3c0;font-size:13px;margin:6px 0 16px}
-.hook{background:linear-gradient(135deg,#243b6b,#16233f);border:1px solid #3a568f;
- border-radius:16px;padding:15px 16px;margin-bottom:20px}
-.hook .t{font-size:15px;font-weight:800;color:#7fc4ff}
-.hook .d{font-size:12.5px;color:#c6d4ea;margin-top:4px;line-height:1.4}
-.hook .fecha{display:inline-block;margin-top:8px;background:rgba(127,196,255,.15);color:#7fc4ff;
- font-size:11px;font-weight:800;padding:4px 10px;border-radius:20px;letter-spacing:.4px}
-a.btn{display:flex;align-items:center;gap:10px;justify-content:space-between;
- text-decoration:none;color:#0b1220;font-weight:800;font-size:15.5px;text-align:left;
- padding:16px 18px;border-radius:15px;margin-bottom:12px;
- background:linear-gradient(135deg,#5ac8fa,#2f9be0);
- box-shadow:0 6px 20px rgba(47,155,224,.30);transition:transform .12s}
-a.btn:active{transform:scale(.98)}
-a.btn .arrow{font-weight:800;opacity:.8}
-a.btn .price{font-size:12px;font-weight:800;opacity:.85;white-space:nowrap}
-a.btn.flag{background:linear-gradient(135deg,#ffd76a,#f2a93b);color:#241a05}
-a.btn.ghost{background:transparent;color:#eaf0f8;border:1.5px solid #33465f;box-shadow:none;font-weight:700}
-.line{display:flex;flex-direction:column;gap:1px}
-.line small{font-size:11px;font-weight:600;opacity:.7}
-.foot{color:#607694;font-size:12px;margin-top:20px;line-height:1.5}
+body{font-family:'Chakra Petch',sans-serif;
+ background:radial-gradient(1200px 600px at 50% -10%,#16294a 0%,var(--navy0) 60%);
+ color:var(--ink);min-height:100vh;display:flex;justify-content:center;padding:26px 16px 40px}
+.wrap{width:100%;max-width:470px}
+/* header */
+.head{text-align:center;margin-bottom:18px}
+.logo{width:78px;height:78px;border-radius:20px;margin:0 auto 12px;object-fit:contain;
+ background:linear-gradient(145deg,#16294a,#0c1a30);padding:8px;
+ border:1px solid #2b4a78;box-shadow:0 10px 34px rgba(0,0,0,.55)}
+h1{font-family:'Orbitron',sans-serif;font-weight:900;font-size:23px;letter-spacing:1.5px;
+ background:linear-gradient(180deg,#fff,#f0d488);-webkit-background-clip:text;background-clip:text;color:transparent}
+.sub{color:var(--muted);font-size:12.5px;letter-spacing:.5px;margin-top:5px;font-weight:500}
+/* gift hook */
+.hook{position:relative;margin:20px 0;border-radius:18px;padding:17px 18px;text-align:center;
+ background:linear-gradient(135deg,rgba(240,212,136,.14),rgba(201,162,75,.06));
+ border:1.5px solid var(--gold2);box-shadow:0 8px 30px rgba(0,0,0,.35)}
+.hook .badge{font-family:'Orbitron',sans-serif;font-size:10px;font-weight:800;letter-spacing:1.5px;
+ color:#0a1526;background:linear-gradient(90deg,var(--gold),var(--gold2));
+ display:inline-block;padding:4px 12px;border-radius:20px;margin-bottom:9px}
+.hook .t{font-family:'Orbitron',sans-serif;font-weight:800;font-size:16px;color:var(--gold)}
+.hook .d{font-size:13px;color:#dbe6f5;margin-top:6px;line-height:1.45}
+.hook .d b{color:#fff}
+/* section label */
+.lbl{font-family:'Orbitron',sans-serif;font-size:11px;font-weight:700;letter-spacing:2px;
+ color:var(--gold2);text-align:center;margin:22px 0 12px;text-transform:uppercase}
+/* featured card */
+a{text-decoration:none;color:inherit}
+.feat{display:block;border-radius:18px;overflow:hidden;margin-bottom:16px;
+ background:var(--card);border:1px solid var(--cardb);box-shadow:0 10px 30px rgba(0,0,0,.4);
+ transition:transform .12s,border-color .2s}
+.feat:active{transform:scale(.985)}
+.feat .ph{width:100%;aspect-ratio:16/10;object-fit:cover;display:block;background:#0c1a30}
+.feat .body{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 16px}
+.feat .nm{font-weight:700;font-size:16px;line-height:1.15}
+.feat .nm small{display:block;font-weight:500;font-size:11.5px;color:var(--muted);margin-top:3px}
+.pill{font-family:'Orbitron',sans-serif;font-weight:800;font-size:14px;white-space:nowrap;
+ color:#0a1526;background:linear-gradient(90deg,var(--gold),var(--gold2));padding:9px 13px;border-radius:12px}
+/* grid */
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.card{display:block;border-radius:16px;overflow:hidden;background:var(--card);
+ border:1px solid var(--cardb);box-shadow:0 8px 22px rgba(0,0,0,.35);transition:transform .12s}
+.card:active{transform:scale(.98)}
+.card .ph{width:100%;aspect-ratio:1;object-fit:cover;display:block;background:#0c1a30}
+.card .body{padding:11px 12px 13px}
+.card .nm{font-weight:600;font-size:13px;line-height:1.2;min-height:31px}
+.card .pr{font-family:'Orbitron',sans-serif;font-weight:800;font-size:14px;color:var(--gold);margin-top:7px}
+/* store btn */
+.store{display:flex;align-items:center;justify-content:center;gap:9px;margin-top:18px;
+ padding:16px;border-radius:15px;font-family:'Orbitron',sans-serif;font-weight:700;font-size:14px;
+ letter-spacing:.5px;color:var(--ink);border:1.5px solid var(--cardb);background:rgba(255,255,255,.03)}
+.foot{text-align:center;color:var(--muted);font-size:11.5px;margin-top:20px;line-height:1.6}
+.foot .ship{color:var(--green);font-weight:600}
 </style></head>
 <body>
 <div class="wrap">
- <div class="logo">✈️</div>
- <h1>NGC AERONÁUTICA</h1>
- <div class="sub">Militaria · Táctico · Aeronáutico 🇦🇷</div>
-
- <div class="hook">
-  <div class="t">🎁 LLAVERO AERONÁUTICO DE REGALO</div>
-  <div class="d">En todas tus compras desde <b>$30.000</b> en la tienda. ¡Sumá tu llavero de aviones/helicóptero sin costo!</div>
-  <div class="fecha">🎖️ RUMBO AL DÍA DE LA FUERZA AÉREA · 10 AGO</div>
+ <div class="head">
+  <img class="logo" src="https://d1a9qnv764bsoo.cloudfront.net/stores/001/340/254/themes/common/logo-1285681964-1758334373-2192272e80ae25e495b63b8d16d89c671758334373.png" alt="NGC">
+  <h1>NGC AERONÁUTICA</h1>
+  <div class="sub">MILITARIA · TÁCTICO · AERONÁUTICO 🇦🇷</div>
  </div>
 
- <a class="btn flag" href="https://ngctienda.mitiendanube.com/productos/kit-f-16-parche-bordado-azul-9x9-cm-parche-negro-peace-condor-9x9-cm-parche-negro-vipers-9x9-cm-duxea/">
-  <span class="line">🎖️ Kit F-16 completo<small>3 parches bordados</small></span>
-  <span class="price">$50.000&nbsp;→</span>
+ <div class="hook">
+  <div class="badge">🎖️ RUMBO AL DÍA DE LA FUERZA AÉREA · 10 AGO</div>
+  <div class="t">🎁 LLAVERO AERONÁUTICO DE REGALO</div>
+  <div class="d">En toda compra desde <b>$30.000</b> sumás tu llavero de aviones/helicóptero <b>sin costo</b>.</div>
+ </div>
+
+ <div class="lbl">★ Destacado</div>
+ <a class="feat" href="https://ngctienda.mitiendanube.com/productos/kit-f-16-parche-bordado-azul-9x9-cm-parche-negro-peace-condor-9x9-cm-parche-negro-vipers-9x9-cm-duxea/">
+  <img class="ph" src="https://acdn-us.mitiendanube.com/stores/001/340/254/products/kit_f_16__parche_bordado_azul_9x9_cm___parche_negro_peace_condor_9x9_cm___parche_negro_vipers_9x9_cm-7-bcf91de41fc5ad361917797514264333-1024-1024.jpg" alt="Kit F-16">
+  <div class="body">
+   <div class="nm">Kit F-16 Completo<small>3 parches bordados de colección</small></div>
+   <div class="pill">$50.000 →</div>
+  </div>
  </a>
 
- <a class="btn" href="https://ngctienda.mitiendanube.com/productos/parche-bordado-escudo-aviones-alta-calidad-ngc-con-abrojo-19v3c/">
-  <span class="line">🛡️ Escudo Aviones FAA<small>alta calidad · con abrojo</small></span>
-  <span class="price">$18.700&nbsp;→</span>
- </a>
+ <div class="lbl">Escuadrón aeronáutico</div>
+ <div class="grid">
+  <a class="card" href="https://ngctienda.mitiendanube.com/productos/parche-bordado-escudo-aviones-alta-calidad-ngc-con-abrojo-19v3c/">
+   <img class="ph" src="https://acdn-us.mitiendanube.com/stores/001/340/254/products/d_nq_np_602857-mla90553118678_082025-f-71bb6ecef15c7fb97117733598116254-1024-1024.jpg" alt="Escudo Aviones FAA">
+   <div class="body"><div class="nm">Escudo Aviones FAA</div><div class="pr">$18.700</div></div>
+  </a>
+  <a class="card" href="https://ngctienda.mitiendanube.com/productos/parche-bordado-f-16-fighting-falcon-9x9-cm-con-abrojo-ngc-719sh/">
+   <img class="ph" src="https://acdn-us.mitiendanube.com/stores/001/340/254/products/d_nq_np_763083-mla111049913655_042026-f-c5c94cac42e663ff1717775114161845-1024-1024.jpg" alt="Parche F-16">
+   <div class="body"><div class="nm">Parche F-16 Falcon</div><div class="pr">$12.000</div></div>
+  </a>
+  <a class="card" href="https://ngctienda.mitiendanube.com/productos/jerarquia-servicio-completo-faa-x-par-para-coser-charretera-1n6x7/">
+   <img class="ph" src="https://acdn-us.mitiendanube.com/stores/001/340/254/products/d_nq_np_991235-mla105027089378_012026-f-79a0d1277cd145050d17733597739039-1024-1024.jpg" alt="Jerarquias FAA">
+   <div class="body"><div class="nm">Jerarquías FAA</div><div class="pr">$29.600</div></div>
+  </a>
+  <a class="card" href="https://ngctienda.mitiendanube.com/productos/escudo-bordado-fuerza-aerea-argentina-amq-c-abrojo-ngc-ada2a/">
+   <img class="ph" src="https://acdn-us.mitiendanube.com/stores/001/340/254/products/d_nq_np_617519-mla105417390144_012026-f-ded50c28e2b161e6da17766447599197-1024-1024.jpg" alt="Escudo AMQ">
+   <div class="body"><div class="nm">Escudo FAA · AMQ</div><div class="pr">$14.250</div></div>
+  </a>
+ </div>
 
- <a class="btn" href="https://ngctienda.mitiendanube.com/productos/parche-bordado-f-16-fighting-falcon-9x9-cm-con-abrojo-ngc-719sh/">
-  <span class="line">✈️ Parche F-16 Fighting Falcon<small>9x9 cm · con abrojo</small></span>
-  <span class="price">$12.000&nbsp;→</span>
- </a>
+ <a class="store" href="https://ngctienda.mitiendanube.com/">🛒 VER TODA LA TIENDA →</a>
 
- <a class="btn" href="https://ngctienda.mitiendanube.com/productos/jerarquia-servicio-completo-faa-x-par-para-coser-charretera-1n6x7/">
-  <span class="line">⭐ Jerarquías FAA<small>servicio completo · x par</small></span>
-  <span class="price">$29.600&nbsp;→</span>
- </a>
-
- <a class="btn ghost" href="https://ngctienda.mitiendanube.com/">
-  <span class="line">🛒 Ver toda la tienda aeronáutica</span>
-  <span class="arrow">→</span>
- </a>
-
- <div class="foot">🚀 Envío en el día · CABA / GBA<br>NGC Tienda Aeronáutica · Tienda oficial</div>
+ <div class="foot"><span class="ship">🚀 Envío en el día · CABA / GBA</span><br>NGC Tienda Aeronáutica · Tienda oficial 🇦🇷</div>
 </div>
 </body></html>
