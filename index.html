@@ -11,7 +11,17 @@
 :root{
  --navy0:#0a1526; --navy1:#10243f; --card:#132540; --cardb:#24406b;
  --gold:#f0d488; --gold2:#c9a24b; --ink:#eaf1fb; --muted:#9fb3d0; --green:#00c853;
+ --fluo:#39ff14;
 }
+.benefits{display:flex;gap:8px;margin:14px 0 2px}
+.ben{flex:1;text-align:center;font-family:'Orbitron',sans-serif;font-weight:800;font-size:10px;
+ letter-spacing:.3px;color:#06180a;background:linear-gradient(90deg,#39ff14,#7dff4d);
+ border-radius:11px;padding:9px 5px;line-height:1.25;box-shadow:0 4px 16px rgba(57,255,20,.30)}
+.tag-fluo{display:inline-block;font-family:'Orbitron',sans-serif;font-weight:800;font-size:9.5px;
+ letter-spacing:.4px;color:#06180a;background:var(--fluo);padding:3px 8px;border-radius:7px;margin-top:6px;
+ box-shadow:0 2px 10px rgba(57,255,20,.35)}
+.card .fluoline{color:var(--fluo);font-family:'Orbitron',sans-serif;font-weight:700;font-size:9px;
+ letter-spacing:.3px;margin-top:5px;text-shadow:0 0 10px rgba(57,255,20,.4)}
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Chakra Petch',sans-serif;
  background:radial-gradient(1200px 600px at 50% -10%,#16294a 0%,var(--navy0) 60%);
@@ -80,11 +90,16 @@ a{text-decoration:none;color:inherit}
   <div class="d">En toda compra desde <b>$30.000</b> sumás tu llavero de aviones/helicóptero <b>sin costo</b>.</div>
  </div>
 
+ <div class="benefits">
+  <div class="ben">🚚 ENVÍO GRATIS<br>CABA / GBA</div>
+  <div class="ben">💳 CUOTAS<br>SIN INTERÉS</div>
+ </div>
+
  <div class="lbl">★ Destacado</div>
  <a class="feat" href="https://ngctienda.mitiendanube.com/productos/kit-f-16-parche-bordado-azul-9x9-cm-parche-negro-peace-condor-9x9-cm-parche-negro-vipers-9x9-cm-duxea/">
   <img class="ph" src="https://acdn-us.mitiendanube.com/stores/001/340/254/products/kit_f_16__parche_bordado_azul_9x9_cm___parche_negro_peace_condor_9x9_cm___parche_negro_vipers_9x9_cm-7-bcf91de41fc5ad361917797514264333-1024-1024.jpg" alt="Kit F-16">
   <div class="body">
-   <div class="nm">Kit F-16 Completo<small>3 parches bordados de colección</small></div>
+   <div class="nm">Kit F-16 Completo<small>3 parches bordados de colección</small><span class="tag-fluo">✓ ENVÍO GRATIS · 3 CUOTAS SIN INTERÉS</span></div>
    <div class="pill">$50.000 →</div>
   </div>
  </a>
