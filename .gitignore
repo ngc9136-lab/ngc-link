@@ -1,0 +1,8 @@
+.env
+node_modules/
+
+# Datos reales de la tienda: no se versionan salvo indicación explícita.
+backup/
+logs/
+reporte-catalogo.md
+cambios-aplicados.md
