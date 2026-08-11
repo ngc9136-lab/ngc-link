@@ -1,0 +1,313 @@
+<title>Pieza del QR</title>
+<style>
+@font-face{font-family:'Orbitron NGC';font-weight:900;src:url(data:font/ttf;base64,__ORBITRON_BLACK__) format('truetype');}
+@font-face{font-family:'Orbitron NGC';font-weight:700;src:url(data:font/ttf;base64,__ORBITRON_BOLD__) format('truetype');}
+@font-face{font-family:'Chakra NGC';font-weight:700;src:url(data:font/ttf;base64,__CHAKRA_BOLD__) format('truetype');}
+@font-face{font-family:'Chakra NGC';font-weight:500;src:url(data:font/ttf;base64,__CHAKRA_MED__) format('truetype');}
+@font-face{font-family:'Chakra NGC';font-weight:400;src:url(data:font/ttf;base64,__CHAKRA_REG__) format('truetype');}
+
+:root{
+  --bg:#101c29;
+  --bg-deep:#0a1420;
+  --surface:#16283b;
+  --surface2:#1c3149;
+  --border:#2b4a6b;
+  --gold:#e8c87a;
+  --gold-light:#f0d28e;
+  --ink:#e8eef5;
+  --muted:#b9c7d4;
+  --muted2:#8199b0;
+  --ink-on-gold:#10202e;
+  --chrome-a:#c8cdd4;
+  --chrome-b:#f2f4f7;
+  --ok:#3fcf8e;
+  --ok-bg:rgba(63,207,142,.12);
+  --warn:#e2637a;
+  --warn-bg:rgba(226,99,122,.12);
+}
+
+*{margin:0;padding:0;box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{
+  background:var(--bg);
+  color:var(--ink);
+  font-family:'Chakra NGC',sans-serif;
+  font-weight:400;
+  line-height:1.5;
+  padding:0 0 64px;
+}
+
+.wrap{max-width:640px;margin:0 auto;padding:0 18px}
+
+/* header */
+header{
+  background:linear-gradient(180deg,var(--bg-deep) 0%,var(--bg) 100%);
+  border-bottom:1px solid var(--border);
+  padding:28px 0 26px;
+  margin-bottom:28px;
+}
+.eyebrow{
+  font-family:'Orbitron NGC',sans-serif;font-weight:700;font-size:11px;
+  letter-spacing:2.5px;color:var(--gold);text-transform:uppercase;
+}
+h1{
+  font-family:'Orbitron NGC',sans-serif;font-weight:900;
+  font-size:clamp(26px,7vw,34px);letter-spacing:.5px;margin-top:10px;
+  text-wrap:balance;
+  background:linear-gradient(180deg,var(--chrome-b),var(--chrome-a));
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+.dek{color:var(--muted);font-size:14.5px;margin-top:10px;max-width:52ch}
+
+/* sections */
+section{margin-bottom:36px}
+.lbl{
+  font-family:'Orbitron NGC',sans-serif;font-weight:700;font-size:11px;
+  letter-spacing:2px;color:var(--gold);text-transform:uppercase;margin-bottom:12px;
+  display:flex;align-items:center;gap:8px;
+}
+.lbl::after{content:'';flex:1;height:1px;background:linear-gradient(90deg,var(--border),transparent)}
+
+/* estado card */
+.status-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.stat{
+  background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  padding:14px 14px 12px;
+}
+.stat .n{font-family:'Orbitron NGC',sans-serif;font-weight:900;font-size:22px;color:var(--gold-light)}
+.stat .d{font-size:11.5px;color:var(--muted);margin-top:3px;letter-spacing:.2px}
+
+/* checklist */
+.fixlist{display:flex;flex-direction:column;gap:10px}
+.fix{
+  background:var(--surface);border:1px solid var(--border);border-radius:12px;
+  padding:13px 14px;display:flex;gap:11px;align-items:flex-start;
+}
+.fix .ck{
+  flex:0 0 auto;width:20px;height:20px;border-radius:6px;background:var(--ok-bg);
+  color:var(--ok);display:flex;align-items:center;justify-content:center;
+  font-size:13px;font-weight:700;margin-top:1px;
+}
+.fix .body b{color:var(--ink);font-size:14px;font-weight:700;display:block;margin-bottom:2px}
+.fix .body span{color:var(--muted);font-size:13px}
+
+/* warning */
+.warn{
+  background:var(--warn-bg);border:1px solid rgba(226,99,122,.35);border-radius:12px;
+  padding:16px;display:flex;gap:12px;
+}
+.warn .ic{
+  flex:0 0 auto;width:22px;height:22px;border-radius:50%;background:var(--warn);
+  color:var(--bg-deep);display:flex;align-items:center;justify-content:center;
+  font-family:'Orbitron NGC',sans-serif;font-weight:900;font-size:13px;
+}
+.warn b{color:var(--ink);font-size:14.5px;display:block;margin-bottom:4px}
+.warn p{color:var(--muted);font-size:13.5px}
+.warn code{background:rgba(0,0,0,.25);padding:1px 6px;border-radius:5px;font-family:monospace;font-size:12px;color:var(--gold-light)}
+
+/* gallery */
+.piece{
+  background:var(--surface);border:1px solid var(--border);border-radius:16px;
+  overflow:hidden;margin-bottom:16px;
+}
+.piece img{display:block;width:100%;height:auto;background:#000}
+.piece .cap{padding:12px 14px 14px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+.piece .cap b{font-size:13.5px;color:var(--ink);font-weight:700}
+.piece .cap span{font-size:12px;color:var(--muted2);display:block;margin-top:2px}
+.tag{
+  font-family:'Orbitron NGC',sans-serif;font-weight:700;font-size:9.5px;letter-spacing:1px;
+  background:var(--surface2);color:var(--gold);padding:4px 8px;border-radius:7px;white-space:nowrap;
+}
+
+/* tabla contraste */
+.tablewrap{overflow-x:auto;border:1px solid var(--border);border-radius:12px;background:var(--surface)}
+table{width:100%;border-collapse:collapse;font-size:12.5px;min-width:520px}
+th{
+  text-align:left;font-family:'Orbitron NGC',sans-serif;font-weight:700;font-size:9.5px;
+  letter-spacing:1px;color:var(--muted2);text-transform:uppercase;
+  padding:10px 12px;border-bottom:1px solid var(--border);white-space:nowrap;
+}
+td{padding:9px 12px;border-bottom:1px solid rgba(43,74,107,.4);color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+tr:last-child td{border-bottom:none}
+.swatch{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px;border:1px solid rgba(255,255,255,.15)}
+.ratio-ok{color:var(--ok);font-weight:700}
+.pass-pill{
+  display:inline-block;font-family:'Orbitron NGC',sans-serif;font-size:9px;font-weight:700;
+  background:var(--ok-bg);color:var(--ok);padding:2px 7px;border-radius:6px;letter-spacing:.5px;
+}
+
+/* code / copy */
+.copyblock{
+  background:var(--bg-deep);border:1px solid var(--border);border-radius:12px;
+  padding:12px 12px 12px 14px;display:flex;align-items:center;gap:10px;margin-bottom:10px;
+}
+.copyblock code{
+  flex:1;font-family:monospace;font-size:12.5px;color:var(--gold-light);
+  overflow-x:auto;white-space:nowrap;
+}
+.copyblock .lbl2{font-size:10.5px;color:var(--muted2);letter-spacing:.5px;margin-bottom:3px;display:block}
+.copybtn{
+  flex:0 0 auto;font-family:'Orbitron NGC',sans-serif;font-weight:700;font-size:10px;
+  letter-spacing:.5px;color:var(--ink-on-gold);background:linear-gradient(90deg,var(--gold),var(--gold-light));
+  border:none;border-radius:8px;padding:9px 12px;cursor:pointer;
+}
+.copybtn:active{transform:scale(.96)}
+.copybtn.copied{background:var(--ok)}
+.copybtn:focus-visible{outline:2px solid var(--gold-light);outline-offset:2px}
+
+/* footer / next */
+.next{
+  background:var(--surface);border:1px dashed var(--border);border-radius:12px;padding:16px;
+}
+.next b{font-family:'Orbitron NGC',sans-serif;font-size:12px;letter-spacing:1px;color:var(--gold);display:block;margin-bottom:8px}
+.next ol{padding-left:18px;color:var(--muted);font-size:13.5px}
+.next li{margin-bottom:4px}
+
+footer{text-align:center;color:var(--muted2);font-size:11.5px;margin-top:30px}
+</style>
+
+<header>
+  <div class="wrap">
+    <div class="eyebrow">NGC Tienda Aeronáutica · Tarea 1</div>
+    <h1>Pieza del QR: antes → después</h1>
+    <p class="dek">Nueve problemas detectados en el flyer original, resueltos con un script reproducible. Contraste medido, QR verificado por decodificación real.</p>
+  </div>
+</header>
+
+<div class="wrap">
+
+<section>
+  <div class="status-grid">
+    <div class="stat"><div class="n">3 / 3</div><div class="d">formatos generados<br>(feed · historia · A6)</div></div>
+    <div class="stat"><div class="n">3 / 3</div><div class="d">QR decodificado OK<br>con OpenCV</div></div>
+    <div class="stat"><div class="n">18 / 18</div><div class="d">textos ≥ 4,5:1<br>de contraste</div></div>
+    <div class="stat"><div class="n">1</div><div class="d">pendiente: logo real<br>(ver aviso abajo)</div></div>
+  </div>
+</section>
+
+<section>
+  <div class="lbl">Problemas resueltos</div>
+  <div class="fixlist">
+    <div class="fix"><div class="ck">✓</div><div class="body"><b>Código ambiguo</b><span>"BIENVENIDO10" se reemplazó por <b style="color:var(--gold-light)">NGC10</b>: sin O ni 0 en el mismo texto, más corto y más fácil de dictar por teléfono.</span></div></div>
+    <div class="fix"><div class="ck">✓</div><div class="body"><b>Tilde en "Válido"</b><span>Corregido en las tres piezas.</span></div></div>
+    <div class="fix"><div class="ck">✓</div><div class="body"><b>Λ en vez de A</b><span>Tipografía Orbitron sin romper letras: "AERONÁUTICA" se lee completa, el peso y el espaciado dan el tono técnico-militar.</span></div></div>
+    <div class="fix"><div class="ck">✓</div><div class="body"><b>No decía qué vende la tienda</b><span>Se agregó la línea "Parches e insignias de la Fuerza Aérea Argentina" debajo del wordmark.</span></div></div>
+    <div class="fix"><div class="ck">✓</div><div class="body"><b>Faltaba la instrucción del QR</b><span>Se agregó "ESCANEÁ Y COMPRÁ" en oro, arriba del QR.</span></div></div>
+    <div class="fix"><div class="ck">✓</div><div class="body"><b>Badge de Tiendanube protagonista</b><span>Se retiró de la composición principal; queda como crédito discreto de una línea en el pie ("Tienda oficial en Tiendanube").</span></div></div>
+    <div class="fix"><div class="ck">✓</div><div class="body"><b>"Recuperar tu carrito" confuso</b><span>Reemplazado por "Válido para tu primera compra", como pediste.</span></div></div>
+    <div class="fix"><div class="ck">✓</div><div class="body"><b>Zona de silencio del QR</b><span>Borde de 4 módulos generado por la librería <code style="font-family:monospace;background:rgba(0,0,0,.25);padding:1px 5px;border-radius:4px;font-size:11.5px">qrcode</code> + panel blanco adicional alrededor (36–55&nbsp;px de margen extra según pieza).</span></div></div>
+    <div class="fix"><div class="ck">✓</div><div class="body"><b>Formato único estirado</b><span>Cada tamaño es una composición distinta (no la misma imagen escalada): tipografía, tamaño de QR y espaciados recalculados para 1080×1080, 1080×1920 y A6 a 300&nbsp;dpi.</span></div></div>
+  </div>
+</section>
+
+<section>
+  <div class="warn">
+    <div class="ic">!</div>
+    <div>
+      <b>El logo real (ala cromada + escudo NGC) no está en estas piezas</b>
+      <p>Intenté descargarlo desde el CDN de la tienda (<code>d1a9qnv764bsoo.cloudfront.net</code>), pero la política de red de este entorno lo bloquea (error 403 en el proxy). En su lugar usé un wordmark tipográfico en degradado cromado y un motivo geométrico de alas — no es el logo oficial. Pasame el archivo PNG del logo (o dame acceso a esa URL) y lo reemplazo en el script sin tocar nada más.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="lbl">Las tres piezas</div>
+
+  <div class="piece">
+    <img src="data:image/png;base64,__IMG_FEED__" alt="Pieza feed 1080x1080" loading="lazy">
+    <div class="cap"><div><b>Feed</b><span>1080 × 1080 px · Instagram / Facebook post</span></div><span class="tag">CUADRADO</span></div>
+  </div>
+
+  <div class="piece">
+    <img src="data:image/png;base64,__IMG_STORY__" alt="Pieza historia 1080x1920" loading="lazy">
+    <div class="cap"><div><b>Historia</b><span>1080 × 1920 px · zonas seguras arriba/abajo respetadas</span></div><span class="tag">VERTICAL</span></div>
+  </div>
+
+  <div class="piece">
+    <img src="data:image/png;base64,__IMG_PRINT__" alt="Pieza para imprenta A6" loading="lazy">
+    <div class="cap"><div><b>Imprenta</b><span>A6 · 105 × 148 mm a 300 dpi (1240 × 1748 px)</span></div><span class="tag">IMPRIMIBLE</span></div>
+  </div>
+</section>
+
+<section>
+  <div class="lbl">Verificación del QR</div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Pieza</th><th>URL decodificada (OpenCV)</th><th>Resultado</th></tr></thead>
+      <tbody>
+        <tr><td>Feed 1080×1080</td><td>https://ngctienda.mitiendanube.com</td><td><span class="pass-pill">OK</span></td></tr>
+        <tr><td>Historia 1080×1920</td><td>https://ngctienda.mitiendanube.com</td><td><span class="pass-pill">OK</span></td></tr>
+        <tr><td>Imprenta A6</td><td>https://ngctienda.mitiendanube.com</td><td><span class="pass-pill">OK</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="lbl">Contraste medido (WCAG, mínimo 4,5:1)</div>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Pieza</th><th>Texto</th><th>Sobre fondo real</th><th>Ratio</th></tr></thead>
+      <tbody id="contrast-body"></tbody>
+    </table>
+  </div>
+</section>
+
+<section>
+  <div class="lbl">Para cambiar el código de descuento</div>
+  <div class="copyblock">
+    <div style="flex:1;overflow:hidden"><span class="lbl2">CÓDIGO ACTUAL</span><code>NGC10</code></div>
+    <button class="copybtn" data-copy="NGC10">COPIAR</button>
+  </div>
+  <div class="copyblock">
+    <div style="flex:1;overflow:hidden"><span class="lbl2">REGENERAR LAS 3 PIEZAS</span><code>python3 qr-flyer/generar_flyer_qr.py</code></div>
+    <button class="copybtn" data-copy="python3 qr-flyer/generar_flyer_qr.py">COPIAR</button>
+  </div>
+  <div class="copyblock">
+    <div style="flex:1;overflow:hidden"><span class="lbl2">VARIABLE A EDITAR EN EL SCRIPT</span><code>DISCOUNT_CODE = "NGC10"</code></div>
+    <button class="copybtn" data-copy='DISCOUNT_CODE = "NGC10"'>COPIAR</button>
+  </div>
+</section>
+
+<section>
+  <div class="next">
+    <b>SIGUIENTE — TAREA 2</b>
+    <ol>
+      <li>Abrir la ficha real de un producto en la tienda y sacar el HTML tal cual está.</li>
+      <li>Ajustar los selectores del CSS preparado contra ese HTML real (no contra una reconstrucción).</li>
+      <li>Corregir el botón "Agregar al carrito" (2,0:1 → texto oscuro sobre oro, ≥10:1), la opción de diseño elegida (invertida respecto a la no elegida), y la caja del código postal (1,8:1).</li>
+      <li>Captura de antes/después en Playwright, 390×844.</li>
+    </ol>
+  </div>
+</section>
+
+</div>
+
+<footer>NGC Tienda Aeronáutica · generado con <code>qr-flyer/generar_flyer_qr.py</code> · reproducible, sin imágenes de IA</footer>
+
+<script>
+document.querySelectorAll('.copybtn').forEach(function(btn){
+  btn.addEventListener('click', function(){
+    var text = btn.getAttribute('data-copy');
+    navigator.clipboard.writeText(text).then(function(){
+      var orig = btn.textContent;
+      btn.textContent = 'COPIADO';
+      btn.classList.add('copied');
+      setTimeout(function(){ btn.textContent = orig; btn.classList.remove('copied'); }, 1500);
+    });
+  });
+});
+
+var CONTRAST = __CONTRAST_JSON__;
+var tbody = document.getElementById('contrast-body');
+CONTRAST.forEach(function(row){
+  var tr = document.createElement('tr');
+  var bgHex = 'rgb(' + row.bg[0] + ',' + row.bg[1] + ',' + row.bg[2] + ')';
+  tr.innerHTML =
+    '<td>' + row.piece + '</td>' +
+    '<td>' + row.label + '</td>' +
+    '<td><span class="swatch" style="background:' + bgHex + '"></span>' + bgHex + '</td>' +
+    '<td class="ratio-ok">' + row.ratio.toFixed(2) + ':1</td>';
+  tbody.appendChild(tr);
+});
+</script>

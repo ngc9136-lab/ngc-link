@@ -1,0 +1,182 @@
+[
+  {
+    "piece": "Feed 1080×1080",
+    "label": "Eyebrow superior",
+    "bg": [
+      22,
+      30,
+      44
+    ],
+    "ratio": 10.33
+  },
+  {
+    "piece": "Feed 1080×1080",
+    "label": "Subtítulo (qué vende)",
+    "bg": [
+      30,
+      41,
+      63
+    ],
+    "ratio": 12.45
+  },
+  {
+    "piece": "Feed 1080×1080",
+    "label": "CTA “Escaneá y comprá”",
+    "bg": [
+      38,
+      44,
+      57
+    ],
+    "ratio": 9.53
+  },
+  {
+    "piece": "Feed 1080×1080",
+    "label": "Código de descuento",
+    "bg": [
+      196,
+      172,
+      108
+    ],
+    "ratio": 7.46
+  },
+  {
+    "piece": "Feed 1080×1080",
+    "label": "Línea de validez",
+    "bg": [
+      12,
+      13,
+      13
+    ],
+    "ratio": 16.66
+  },
+  {
+    "piece": "Feed 1080×1080",
+    "label": "URL del pie",
+    "bg": [
+      16,
+      18,
+      19
+    ],
+    "ratio": 10.9
+  },
+  {
+    "piece": "Historia 1080×1920",
+    "label": "Eyebrow superior",
+    "bg": [
+      27,
+      34,
+      46
+    ],
+    "ratio": 9.87
+  },
+  {
+    "piece": "Historia 1080×1920",
+    "label": "Subtítulo (qué vende)",
+    "bg": [
+      37,
+      43,
+      57
+    ],
+    "ratio": 12.12
+  },
+  {
+    "piece": "Historia 1080×1920",
+    "label": "CTA “Escaneá y comprá”",
+    "bg": [
+      55,
+      52,
+      46
+    ],
+    "ratio": 8.45
+  },
+  {
+    "piece": "Historia 1080×1920",
+    "label": "Código de descuento",
+    "bg": [
+      196,
+      172,
+      108
+    ],
+    "ratio": 7.46
+  },
+  {
+    "piece": "Historia 1080×1920",
+    "label": "Línea de validez",
+    "bg": [
+      20,
+      21,
+      22
+    ],
+    "ratio": 15.65
+  },
+  {
+    "piece": "Historia 1080×1920",
+    "label": "URL del pie",
+    "bg": [
+      24,
+      26,
+      29
+    ],
+    "ratio": 10.12
+  },
+  {
+    "piece": "Imprenta A6",
+    "label": "Eyebrow superior",
+    "bg": [
+      23,
+      29,
+      40
+    ],
+    "ratio": 10.44
+  },
+  {
+    "piece": "Imprenta A6",
+    "label": "Subtítulo (qué vende)",
+    "bg": [
+      25,
+      31,
+      43
+    ],
+    "ratio": 14.13
+  },
+  {
+    "piece": "Imprenta A6",
+    "label": "CTA “Escaneá y comprá”",
+    "bg": [
+      27,
+      28,
+      30
+    ],
+    "ratio": 11.62
+  },
+  {
+    "piece": "Imprenta A6",
+    "label": "Código de descuento",
+    "bg": [
+      197,
+      173,
+      109
+    ],
+    "ratio": 7.55
+  },
+  {
+    "piece": "Imprenta A6",
+    "label": "Línea de validez",
+    "bg": [
+      12,
+      13,
+      14
+    ],
+    "ratio": 16.65
+  },
+  {
+    "piece": "Imprenta A6",
+    "label": "URL del pie",
+    "bg": [
+      12,
+      14,
+      15
+    ],
+    "ratio": 11.22
+  }
+]
