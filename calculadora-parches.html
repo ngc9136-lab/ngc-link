@@ -1,0 +1,423 @@
+<title>Costeador de Parches NGC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{
+  --bg:#e9edf2; --surface:#ffffff; --surface2:#f4f7fa; --line:#ccd6e0; --line2:#e2e9f0;
+  --ink:#0e1a27; --muted:#5b6b7d; --accent:#8a6212; --accent-bg:#f5e9cc;
+  --pos:#0d6d51; --warn:#a8422c;
+  --c1:#c9922b; --c2:#2f8f88; --c3:#5b6fc4; --c4:#c25f78; --c5:#4f9560; --c6:#c4703c; --c7:#7c88a0; --c8:#8a6bc0;
+  --shadow:0 1px 2px rgba(14,26,39,.06),0 8px 24px -14px rgba(14,26,39,.22);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#08111f; --surface:#0f1f36; --surface2:#132741; --line:#26405f; --line2:#1b3251;
+    --ink:#e8f0fa; --muted:#94a9c3; --accent:#f0d488; --accent-bg:#1d3253;
+    --pos:#46d3a0; --warn:#ff9377;
+    --c1:#e2b458; --c2:#4fc4bb; --c3:#8296e8; --c4:#e88aa1; --c5:#6fc182; --c6:#e59462; --c7:#9fb0c9; --c8:#b193e6;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px -16px rgba(0,0,0,.8);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#08111f; --surface:#0f1f36; --surface2:#132741; --line:#26405f; --line2:#1b3251;
+  --ink:#e8f0fa; --muted:#94a9c3; --accent:#f0d488; --accent-bg:#1d3253;
+  --pos:#46d3a0; --warn:#ff9377;
+  --c1:#e2b458; --c2:#4fc4bb; --c3:#8296e8; --c4:#e88aa1; --c5:#6fc182; --c6:#e59462; --c7:#9fb0c9; --c8:#b193e6;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 10px 30px -16px rgba(0,0,0,.8);
+}
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:'IBM Plex Sans',system-ui,-apple-system,sans-serif; font-size:15px; line-height:1.5;
+  padding-bottom:96px;
+}
+.wrap{max-width:1180px;margin:0 auto;padding:20px 16px 40px}
+
+/* ---- header ---- */
+.top{display:flex;flex-wrap:wrap;align-items:flex-end;gap:14px;justify-content:space-between;margin-bottom:20px}
+.brand{display:flex;align-items:center;gap:12px}
+.mark{width:38px;height:38px;flex:none;border:1.5px solid var(--accent);border-radius:8px;display:grid;place-items:center;color:var(--accent)}
+h1{font-family:'Chakra Petch',sans-serif;font-weight:700;font-size:23px;letter-spacing:.2px;margin:0;text-wrap:balance}
+.sub{color:var(--muted);font-size:13px;margin-top:1px}
+.theme-btn{font:inherit;font-size:12px;color:var(--muted);background:var(--surface);border:1px solid var(--line);
+  border-radius:999px;padding:7px 14px;cursor:pointer}
+.theme-btn:hover{color:var(--ink);border-color:var(--accent)}
+
+/* ---- layout ---- */
+.cols{display:grid;grid-template-columns:1fr 372px;gap:18px;align-items:start}
+@media (max-width:940px){.cols{grid-template-columns:1fr}}
+.stack{display:flex;flex-direction:column;gap:18px}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}
+.card>header{display:flex;align-items:baseline;gap:10px;padding:14px 16px 0}
+.card h2{font-family:'Chakra Petch',sans-serif;font-size:12px;font-weight:700;letter-spacing:1.4px;
+  text-transform:uppercase;margin:0;color:var(--ink)}
+.card h2 .n{color:var(--accent);font-family:'IBM Plex Mono',monospace;font-size:11px;margin-right:6px}
+.card .hint{font-size:12px;color:var(--muted);margin-left:auto}
+.body{padding:14px 16px 16px}
+
+/* ---- fields ---- */
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.f{display:grid;grid-template-rows:1fr auto;gap:5px;min-width:0}
+label{font-size:11.5px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;color:var(--muted)}
+label .u{text-transform:none;letter-spacing:0;font-weight:400;opacity:.85}
+input[type=text],select{
+  font-family:'IBM Plex Mono',monospace; font-size:14px; font-variant-numeric:tabular-nums;
+  color:var(--ink); background:var(--surface2); border:1px solid var(--line);
+  border-radius:8px; padding:9px 10px; width:100%; min-width:0;
+}
+select{font-family:'IBM Plex Sans',sans-serif}
+input[type=text]:focus,select:focus,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+input[readonly]{background:transparent;color:var(--muted);border-style:dashed}
+.chk{display:flex;align-items:center;gap:8px;font-size:13.5px;line-height:1.25;color:var(--ink);cursor:pointer;align-self:end;padding-bottom:10px}
+.chk input{accent-color:var(--accent);width:16px;height:16px}
+.rowbtns{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;align-items:center}
+button{font-family:'Chakra Petch',sans-serif;font-weight:600;font-size:12px;letter-spacing:.6px;
+  background:var(--surface2);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px 13px;cursor:pointer}
+button:hover{border-color:var(--accent);color:var(--accent)}
+.note{font-size:12px;color:var(--muted);margin-top:12px;line-height:1.55}
+.note b{color:var(--ink);font-weight:600}
+
+/* ---- resultado ---- */
+.res{position:sticky;top:16px}
+.hero{padding:16px}
+.k{font-size:11.5px;font-weight:600;letter-spacing:.6px;text-transform:uppercase;color:var(--muted)}
+.big{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;font-weight:600;
+  font-size:34px;line-height:1.1;letter-spacing:-1px;margin-top:2px}
+.stitch{margin-top:14px;padding:12px 14px;border-radius:10px;background:var(--accent-bg);
+  border:1px solid color-mix(in srgb,var(--accent) 40%,transparent)}
+.stitch .k{color:var(--accent)}
+.stitch .v{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;font-weight:600;font-size:26px;
+  color:var(--ink);letter-spacing:-.5px}
+.stitch .sm{font-size:12px;color:var(--muted);margin-top:3px}
+.bar{display:flex;height:9px;border-radius:5px;overflow:hidden;margin:16px 0 12px;background:var(--surface2)}
+.bar i{display:block;height:100%}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+td{padding:6px 0;border-bottom:1px solid var(--line2)}
+tr:last-child td{border-bottom:0}
+td.n{text-align:right;font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;white-space:nowrap}
+td.p{text-align:right;color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:12px;width:44px}
+.dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:8px;vertical-align:1px}
+tr.tot td{border-top:1.5px solid var(--line);border-bottom:0;padding-top:9px;font-weight:600}
+.sale{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+.tile{background:var(--surface2);border:1px solid var(--line2);border-radius:10px;padding:10px 12px}
+.tile .v{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;font-weight:600;font-size:17px;margin-top:2px}
+.tile.ok .v{color:var(--pos)}
+.meta{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:12.5px;color:var(--muted);
+  border-top:1px solid var(--line2);margin-top:14px;padding-top:12px}
+.meta span{font-family:'IBM Plex Mono',monospace;text-align:right}
+.meta .k{white-space:nowrap}
+
+/* ---- barra móvil ---- */
+.mob{position:fixed;left:0;right:0;bottom:0;z-index:9;display:none;gap:16px;align-items:center;
+  background:var(--surface);border-top:1px solid var(--line);padding:10px 16px;
+  box-shadow:0 -8px 24px -18px rgba(0,0,0,.6)}
+.mob div{flex:1;min-width:0}
+.mob .v{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;font-weight:600;font-size:19px}
+@media (max-width:940px){.mob{display:flex}}
+@media (prefers-reduced-motion:no-preference){.big,.stitch .v,.mob .v{transition:color .2s}}
+</style>
+
+<div class="wrap">
+  <div class="top">
+    <div class="brand">
+      <div class="mark" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+          <path d="M3 7h18M3 12h18M3 17h18" stroke-dasharray="3 2.4"/>
+        </svg>
+      </div>
+      <div>
+        <h1>Costeador de Parches</h1>
+        <div class="sub">NGC Aeronáutica · costo real por parche y valor de la puntada</div>
+      </div>
+    </div>
+    <button class="theme-btn" id="theme">Tema claro / oscuro</button>
+  </div>
+
+  <div class="cols">
+    <div class="stack">
+
+      <section class="card">
+        <header><h2><span class="n">01</span>Bastidor y parche</h2><span class="hint" id="fitHint"></span></header>
+        <div class="body">
+          <div class="grid">
+            <div class="f"><label for="preBast">Bastidor</label>
+              <select id="preBast">
+                <option value="36x35">Grande 36 × 35 cm (planilla)</option>
+                <option value="30x20">30 × 20 cm</option>
+                <option value="20x20">20 × 20 cm</option>
+                <option value="18x13">18 × 13 cm</option>
+                <option value="10x10">10 × 10 cm</option>
+                <option value="custom">Medida propia</option>
+              </select></div>
+            <div class="f"><label for="bastW">Ancho bastidor <span class="u">cm</span></label><input id="bastW" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="bastH">Alto bastidor <span class="u">cm</span></label><input id="bastH" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="parW">Ancho parche <span class="u">cm</span></label><input id="parW" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="parH">Alto parche <span class="u">cm</span></label><input id="parH" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="sep">Separación <span class="u">cm</span></label><input id="sep" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="porBast">Parches por bastidor</label><input id="porBast" type="text" inputmode="decimal"></div>
+            <label class="chk" for="autoFit"><input type="checkbox" id="autoFit"> Calcular automático</label>
+          </div>
+          <div class="note">El área del bastidor define cuánta tela y friselina se consume. Si entra más de un parche por bastidor,
+            la tela y el tiempo de preparación se reparten entre todos.</div>
+        </div>
+      </section>
+
+      <section class="card">
+        <header><h2><span class="n">02</span>Bordado</h2><span class="hint" id="maqHint"></span></header>
+        <div class="body">
+          <div class="grid">
+            <div class="f"><label for="puntadas">Puntadas <span class="u">del diseño</span></label><input id="puntadas" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="ppm">Velocidad <span class="u">puntadas/min</span></label><input id="ppm" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="prep">Preparación <span class="u">min/bastidor</span></label><input id="prep" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="tMaq">Tiempo máquina <span class="u">min/parche</span></label><input id="tMaq" type="text" readonly></div>
+          </div>
+          <div class="note">Velocidad <b>efectiva</b>: incluye cambios de color y paradas. Con los datos de la planilla
+            (70.500 puntadas en 210 min) da unas <b>335 puntadas/min</b>.</div>
+        </div>
+      </section>
+
+      <section class="card">
+        <header><h2><span class="n">03</span>Confección</h2></header>
+        <div class="body">
+          <div class="grid">
+            <div class="f"><label for="tCorte">Corte y terminación <span class="u">min</span></label><input id="tCorte" type="text" inputmode="decimal"></div>
+            <label class="chk" for="conAbrojo"><input type="checkbox" id="conAbrojo"> Lleva abrojo (velcro)</label>
+            <div class="f"><label for="tAbrojo">Cosido de abrojo <span class="u">min</span></label><input id="tAbrojo" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="cantidad">Parches del pedido</label><input id="cantidad" type="text" inputmode="decimal"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <header><h2><span class="n">04</span>Costos base</h2><span class="hint">se guardan en este dispositivo</span></header>
+        <div class="body">
+          <div class="grid">
+            <div class="f"><label for="preTela">Tipo de tela</label>
+              <select id="preTela">
+                <option value="4000">Cordura — $/m²</option>
+                <option value="4000b">Gabardina / UCA</option>
+                <option value="3333.33">Tela jean</option>
+                <option value="1650">Microfibra</option>
+                <option value="custom">Otra</option>
+              </select></div>
+            <div class="f"><label for="pTela">Tela <span class="u">$/m²</span></label><input id="pTela" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="pFris">Friselina <span class="u">$/m²</span></label><input id="pFris" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="pCono">Cono de hilo <span class="u">$</span></label><input id="pCono" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="rendCono">Rinde del cono <span class="u">puntadas</span></label><input id="rendCono" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="factorHilo">Factor hilo <span class="u">canilla/merma</span></label><input id="factorHilo" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="pAbrojo">Abrojo <span class="u">$/metro</span></label><input id="pAbrojo" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="anchoAbrojo">Ancho del rollo <span class="u">cm</span></label><input id="anchoAbrojo" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="pKwh">Electricidad <span class="u">$/kWh</span></label><input id="pKwh" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="kwBord">Consumo bordadora <span class="u">kW</span></label><input id="kwBord" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="kwTaller">Consumo taller <span class="u">kW</span></label><input id="kwTaller" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="costoMaqMin">Máquina <span class="u">$/min</span></label><input id="costoMaqMin" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="manoHora">Mano de obra <span class="u">$/hora</span></label><input id="manoHora" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="superv">Supervisión bordado <span class="u">% del tiempo</span></label><input id="superv" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="merma">Merma de tela <span class="u">%</span></label><input id="merma" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="overhead">Gastos generales <span class="u">%</span></label><input id="overhead" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="markup">Multiplicador de venta</label><input id="markup" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="mayor">Mayorista <span class="u">% del público</span></label><input id="mayor" type="text" inputmode="decimal"></div>
+          </div>
+          <div class="rowbtns">
+            <span class="k" style="letter-spacing:.4px">Actualizar todos los precios ×</span>
+            <input id="ajuste" type="text" inputmode="decimal" value="1" style="width:82px">
+            <button id="aplicar" type="button">Aplicar</button>
+            <button id="reset" type="button">Volver a los valores de la planilla</button>
+            <button id="copiar" type="button">Copiar resumen</button>
+          </div>
+          <div class="note">Los valores de tela, friselina, hilo, abrojo y máquina salen de tu planilla, columna
+            <b>Precios 07/11/2023</b> — están viejos: usá <b>Actualizar todos los precios ×</b> para llevarlos a hoy de una sola vez.
+            Electricidad, mano de obra y gastos generales no estaban en la planilla: son estimaciones, cargá las tuyas.</div>
+        </div>
+      </section>
+    </div>
+
+    <aside class="card res">
+      <div class="hero">
+        <div class="k">Costo por parche</div>
+        <div class="big" id="oCosto">—</div>
+
+        <div class="stitch">
+          <div class="k">Valor de la puntada</div>
+          <div class="v" id="oPuntada">—</div>
+          <div class="sm" id="oPuntadaHilo"></div>
+        </div>
+
+        <div class="bar" id="bar"></div>
+        <table id="tabla"><tbody></tbody></table>
+
+        <div class="sale">
+          <div class="tile"><div class="k">Público ×<span id="oMk"></span></div><div class="v" id="oPvp">—</div></div>
+          <div class="tile ok"><div class="k">Mayorista</div><div class="v" id="oMay">—</div></div>
+        </div>
+
+        <div class="meta"><span class="k">Pedido <span id="oCant"></span> u.</span><span id="oTotal">—</span></div>
+        <div class="meta" style="border:0;margin-top:0;padding-top:4px"><span class="k">Tiempo total</span><span id="oTiempo">—</span></div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<div class="mob">
+  <div><div class="k">Costo / parche</div><div class="v" id="mCosto">—</div></div>
+  <div><div class="k">$ / puntada</div><div class="v" id="mPuntada" style="color:var(--accent)">—</div></div>
+</div>
+
+<script>
+const DEF={
+  bastW:36, bastH:35, parW:9, parH:7, sep:1, porBast:1, autoFit:false,
+  puntadas:30000, ppm:335, prep:10, tCorte:2, conAbrojo:true, tAbrojo:3, cantidad:20,
+  pTela:4000, pFris:13333.33, pCono:5800, rendCono:500000, factorHilo:1,
+  pAbrojo:1500, anchoAbrojo:5, pKwh:120, kwBord:0.75, kwTaller:0.3,
+  costoMaqMin:3.5, manoHora:8000, superv:20, merma:10, overhead:10, markup:3, mayor:75,
+  preBast:'36x35', preTela:'4000'
+};
+const NUM=['bastW','bastH','parW','parH','sep','porBast','puntadas','ppm','prep','tCorte','tAbrojo','cantidad',
+  'pTela','pFris','pCono','rendCono','factorHilo','pAbrojo','anchoAbrojo','pKwh','kwBord','kwTaller',
+  'costoMaqMin','manoHora','superv','merma','overhead','markup','mayor'];
+const CHK=['autoFit','conAbrojo'], SEL=['preBast','preTela'];
+const $=id=>document.getElementById(id);
+
+const ars=(v,d=2)=>isFinite(v)?v.toLocaleString('es-AR',{style:'currency',currency:'ARS',minimumFractionDigits:d,maximumFractionDigits:d}):'—';
+const num=(v,d=0)=>isFinite(v)?v.toLocaleString('es-AR',{minimumFractionDigits:d,maximumFractionDigits:d}):'—';
+function leer(id){
+  // acepta 30000 / 30.000 / 1.234,56 / 1234.56
+  let t=String($(id).value).trim().replace(/\s|\$/g,'');
+  if(!t) return 0;
+  if(t.includes(',')) t=t.replace(/\./g,'').replace(',','.');
+  else if(/^-?\d{1,3}(\.\d{3})+$/.test(t)) t=t.replace(/\./g,'');
+  const n=parseFloat(t);
+  return isFinite(n)?n:0;
+}
+
+function cargar(){
+  let s={};
+  try{ s=JSON.parse(localStorage.getItem('ngc-parches')||'{}'); }catch(e){ s={}; }
+  const d={...DEF,...s};
+  NUM.forEach(k=>$(k).value=String(d[k]).replace('.',','));
+  CHK.forEach(k=>$(k).checked=!!d[k]);
+  SEL.forEach(k=>$(k).value=d[k]);
+}
+function guardar(){
+  const d={};
+  NUM.forEach(k=>d[k]=leer(k));
+  CHK.forEach(k=>d[k]=$(k).checked);
+  SEL.forEach(k=>d[k]=$(k).value);
+  try{ localStorage.setItem('ngc-parches',JSON.stringify(d)); }catch(e){}
+}
+
+function encajan(BW,BH,pw,ph,s){
+  if(pw<=0||ph<=0) return 1;
+  const fit=(w,h)=>Math.max(0,Math.floor((BW+s)/(w+s)))*Math.max(0,Math.floor((BH+s)/(h+s)));
+  return Math.max(1,fit(pw,ph),fit(ph,pw));
+}
+
+function calcular(){
+  const BW=leer('bastW'), BH=leer('bastH'), pw=leer('parW'), ph=leer('parH'), s=leer('sep');
+  const auto=$('autoFit').checked;
+  $('porBast').readOnly=auto;
+  let n=auto?encajan(BW,BH,pw,ph,s):Math.max(1,Math.round(leer('porBast')));
+  if(auto) $('porBast').value=n;
+  $('fitHint').textContent=`bastidor ${num(BW*BH/10000,4)} m² · ${n} parche${n>1?'s':''} por puesta`;
+
+  const puntadas=leer('puntadas'), ppm=Math.max(1,leer('ppm'));
+  const tMaq=puntadas/ppm + leer('prep')/n;
+  $('tMaq').value=num(tMaq,1);
+  $('maqHint').textContent=`${num(tMaq*n,1)} min por bastidor`;
+
+  const areaBast=(BW*BH)/10000/n*(1+leer('merma')/100);   // m² de tela por parche
+  const areaPar=(pw*ph)/10000;                             // m² del parche terminado
+  const abrojoOn=$('conAbrojo').checked;
+  const anchoRollo=Math.max(0.01,leer('anchoAbrojo')/100);
+  const tMan=leer('tCorte')+(abrojoOn?leer('tAbrojo'):0);
+  const hHombre=tMan/60 + (tMaq/60)*(leer('superv')/100);
+
+  const cHiloPunt=leer('rendCono')>0 ? leer('pCono')/leer('rendCono')*leer('factorHilo') : 0;
+
+  const items=[
+    ['Hilo',        puntadas*cHiloPunt,                                     'var(--c1)'],
+    ['Tela',        areaBast*leer('pTela'),                                 'var(--c2)'],
+    ['Friselina',   areaBast*leer('pFris'),                                 'var(--c3)'],
+    ['Abrojo',      abrojoOn?areaPar/anchoRollo*leer('pAbrojo'):0,          'var(--c4)'],
+    ['Máquina',     tMaq*leer('costoMaqMin'),                               'var(--c5)'],
+    ['Electricidad',(leer('kwBord')*tMaq/60 + leer('kwTaller')*tMan/60)*leer('pKwh'), 'var(--c6)'],
+    ['Mano de obra',hHombre*leer('manoHora'),                               'var(--c7)']
+  ];
+  const directo=items.reduce((a,b)=>a+b[1],0);
+  const gg=directo*leer('overhead')/100;
+  if(gg>0) items.push(['Gastos generales',gg,'var(--c8)']);
+  const costo=directo+gg;
+
+  $('oCosto').textContent=ars(costo);
+  $('mCosto').textContent=ars(costo,0);
+  const vp=puntadas>0?costo/puntadas:0;
+  $('oPuntada').textContent=ars(vp,4);
+  $('mPuntada').textContent=ars(vp,4);
+  $('oPuntadaHilo').textContent=`solo hilo ${ars(cHiloPunt,4)} · cada 1.000 puntadas ${ars(vp*1000)}`;
+
+  $('bar').innerHTML=items.filter(i=>i[1]>0)
+    .map(i=>`<i style="background:${i[2]};width:${(i[1]/costo*100).toFixed(2)}%"></i>`).join('');
+  $('tabla').querySelector('tbody').innerHTML=items.map(i=>
+    `<tr><td><span class="dot" style="background:${i[2]}"></span>${i[0]}</td>
+     <td class="n">${ars(i[1])}</td><td class="p">${costo>0?(i[1]/costo*100).toFixed(0):0}%</td></tr>`).join('')
+    +`<tr class="tot"><td>Costo unitario</td><td class="n">${ars(costo)}</td><td class="p"></td></tr>`;
+
+  const mk=leer('markup'), pvp=costo*mk, may=pvp*leer('mayor')/100;
+  $('oMk').textContent=num(mk,mk%1?1:0);
+  $('oPvp').textContent=ars(pvp,0);
+  $('oMay').textContent=ars(may,0);
+  const q=Math.max(1,Math.round(leer('cantidad')));
+  $('oCant').textContent=num(q);
+  $('oTotal').textContent=`${ars(costo*q,0)} costo · ${ars(pvp*q,0)} venta`;
+  const min=(tMaq+tMan)*q;
+  $('oTiempo').textContent=`${num(Math.floor(min/60))} h ${num(Math.round(min%60))} min`;
+
+  window.__resumen=()=>[
+    `PARCHE · ${num(puntadas)} puntadas · ${num(pw,1)}×${num(ph,1)} cm${abrojoOn?' · con abrojo':''}`,
+    ...items.map(i=>`${i[0]}: ${ars(i[1])}`),
+    `COSTO UNITARIO: ${ars(costo)}`,
+    `Valor de la puntada: ${ars(vp,4)}`,
+    `Precio público (×${num(mk,mk%1?1:0)}): ${ars(pvp,0)} · Mayorista: ${ars(may,0)}`,
+    `Pedido ${num(q)} u.: ${ars(costo*q,0)} de costo · ${ars(pvp*q,0)} de venta`
+  ].join('\n');
+}
+
+/* eventos */
+[...NUM,...CHK,...SEL].forEach(k=>{
+  const el=$(k), ev=el.type==='checkbox'||el.tagName==='SELECT'?'change':'input';
+  el.addEventListener(ev,()=>{guardar();calcular();});
+});
+$('preBast').addEventListener('change',e=>{
+  if(e.target.value==='custom')return;
+  const [w,h]=e.target.value.split('x'); $('bastW').value=w; $('bastH').value=h; guardar(); calcular();
+});
+$('preTela').addEventListener('change',e=>{
+  const v=e.target.value;
+  if(v==='custom')return;
+  $('pTela').value=String(parseFloat(v)).replace('.',','); guardar(); calcular();
+});
+$('aplicar').addEventListener('click',()=>{
+  const f=leer('ajuste'); if(!(f>0))return;
+  ['pTela','pFris','pCono','pAbrojo','pKwh','costoMaqMin','manoHora'].forEach(k=>{
+    $(k).value=String(+(leer(k)*f).toFixed(2)).replace('.',',');
+  });
+  $('ajuste').value='1'; guardar(); calcular();
+});
+$('reset').addEventListener('click',()=>{
+  localStorage.removeItem('ngc-parches'); cargar(); calcular();
+});
+$('copiar').addEventListener('click',async e=>{
+  try{ await navigator.clipboard.writeText(window.__resumen()); e.target.textContent='Copiado'; }
+  catch(err){ e.target.textContent='No se pudo copiar'; }
+  setTimeout(()=>e.target.textContent='Copiar resumen',1600);
+});
+$('theme').addEventListener('click',()=>{
+  const dark=matchMedia('(prefers-color-scheme:dark)').matches;
+  const cur=document.documentElement.getAttribute('data-theme')||(dark?'dark':'light');
+  document.documentElement.setAttribute('data-theme',cur==='dark'?'light':'dark');
+});
+
+cargar(); calcular();
+</script>
