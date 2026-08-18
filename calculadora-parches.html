@@ -237,9 +237,11 @@ tr.tot td{border-top:1.5px solid var(--line);border-bottom:0;padding-top:9px;fon
                 <option value="1650">Microfibra</option>
                 <option value="custom">Otra tela</option>
               </select></div>
-            <div class="f"><label for="pTela">Tela <span class="u">$/m lineal</span></label><input id="pTela" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="pRolloTela">Rollo de tela <span class="u">$ sin IVA</span></label><input id="pRolloTela" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="largoTela">Largo rollo tela <span class="u">m</span></label><input id="largoTela" type="text" inputmode="decimal"></div>
             <div class="f"><label for="anchoTela">Ancho rollo tela <span class="u">m</span></label><input id="anchoTela" type="text" inputmode="decimal"></div>
-            <div class="f"><label for="pFris">Friselina <span class="u">$/m lineal</span></label><input id="pFris" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="pRolloFris">Rollo de friselina <span class="u">$ sin IVA</span></label><input id="pRolloFris" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="largoFris">Largo rollo friselina <span class="u">m</span></label><input id="largoFris" type="text" inputmode="decimal"></div>
             <div class="f"><label for="anchoFris">Ancho rollo friselina <span class="u">m</span></label><input id="anchoFris" type="text" inputmode="decimal"></div>
             <div class="f"><label for="pCono">Cono de hilo <span class="u">$ sin IVA</span></label><input id="pCono" type="text" inputmode="decimal"></div>
             <div class="f"><label for="rendCono">Rinde del cono <span class="u">puntadas</span></label><input id="rendCono" type="text" inputmode="decimal"></div>
@@ -315,10 +317,11 @@ tr.tot td{border-top:1.5px solid var(--line);border-bottom:0;padding-top:9px;fon
 const DEF={
   bastW:360, bastH:240, excedente:30, parW:90, parH:70, sep:10, porBast:1, autoFit:false,
   puntadas:30000, ppm:400, prep:10, tCorte:2, conAbrojo:true, tAbrojo:3, cantidad:20,
-  pTela:6000, anchoTela:1.5, pFris:20000, anchoFris:1.5, pCono:5041.32, rendCono:500000, factorHilo:1,
+  pRolloTela:6000, largoTela:1, anchoTela:1.5, pRolloFris:58512.42, largoFris:4, anchoFris:0.5,
+  pCono:5041.32, rendCono:500000, factorHilo:1,
   pAbrojo:1500, anchoAbrojo:5, pKwh:216.24, kwBord:0.75, kwTaller:0.3,
   costoMaqMin:3.5, manoHora:2500, superv:20, merma:0, overhead:10, markup:3, mayor:75,
-  preBast:'360x240', preTela:'6000', modoCorte:'rollo', u:'mm8'
+  preBast:'360x240', preTela:'6000', modoCorte:'rollo', u:'mm9'
 };
 // modelo real medido en la bordadora: 16 ARGENTINA en el bastidor N° 1, 117.529 puntadas la bandeja
 const MODELOS_DEF=[{nombre:'ARG7 · ARGENTINA', preBast:'360x240', bastW:360, bastH:240,
@@ -326,7 +329,7 @@ const MODELOS_DEF=[{nombre:'ARG7 · ARGENTINA', preBast:'360x240', bastW:360, ba
   tCorte:2, conAbrojo:true, tAbrojo:3}];
 
 const NUM=['bastW','bastH','excedente','parW','parH','sep','porBast','puntadas','ppm','prep','tCorte','tAbrojo','cantidad',
-  'pTela','anchoTela','pFris','anchoFris','pCono','rendCono','factorHilo','pAbrojo','anchoAbrojo','pKwh','kwBord','kwTaller',
+  'pRolloTela','largoTela','anchoTela','pRolloFris','largoFris','anchoFris','pCono','rendCono','factorHilo','pAbrojo','anchoAbrojo','pKwh','kwBord','kwTaller',
   'costoMaqMin','manoHora','superv','merma','overhead','markup','mayor'];
 const CHK=['autoFit','conAbrojo'], SEL=['preBast','preTela','modoCorte'];
 // lo que define a un modelo de parche, aparte de los costos base
@@ -360,7 +363,10 @@ function cargar(){
   if(s.u!=='mm7'&&s.u!=='mm8'){                 // tela y friselina pasan a $/metro lineal
     delete s.pTela; delete s.pFris; delete s.preTela;
   }
-  if(s.u!=='mm8') delete s.pCono;               // cono de hilo: factura Bordapack 25/07/2026, neto
+  if(s.u!=='mm8'&&s.u!=='mm9') delete s.pCono;  // cono de hilo: factura Bordapack 25/07/2026, neto
+  if(s.u!=='mm9'){                              // tela y friselina se cargan como vienen en la factura
+    ['pTela','pFris','anchoTela','anchoFris'].forEach(k=>delete s[k]);
+  }
   const d={...DEF,...s};
   NUM.forEach(k=>$(k).value=String(d[k]).replace('.',','));
   CHK.forEach(k=>$(k).checked=!!d[k]);
@@ -375,7 +381,7 @@ function guardar(){
   NUM.forEach(k=>d[k]=leer(k));
   CHK.forEach(k=>d[k]=$(k).checked);
   SEL.forEach(k=>d[k]=$(k).value);
-  d.u='mm8';
+  d.u='mm9';
   try{ localStorage.setItem('ngc-parches',JSON.stringify(d)); }catch(e){}
 }
 function cargarModelos(){
@@ -398,9 +404,11 @@ function encajan(BW,BH,pw,ph,s){   // 0 = el parche no entra en el bastidor
 }
 function base(){
   const b={};
-  ['excedente','merma','pTela','anchoTela','pFris','anchoFris','pCono','rendCono','factorHilo','pAbrojo','anchoAbrojo',
+  ['excedente','merma','pRolloTela','largoTela','anchoTela','pRolloFris','largoFris','anchoFris','pCono','rendCono','factorHilo','pAbrojo','anchoAbrojo',
    'pKwh','kwBord','kwTaller','costoMaqMin','manoHora','superv','overhead','markup','mayor'].forEach(k=>b[k]=leer(k));
   b.modoCorte=$('modoCorte').value;
+  b.pTela = b.largoTela>0 ? b.pRolloTela/b.largoTela : 0;   // $ por metro lineal de rollo
+  b.pFris = b.largoFris>0 ? b.pRolloFris/b.largoFris : 0;
   const sel=$('preTela');
   b.nombreTela = sel.value==='custom' ? 'Tela' : sel.options[sel.selectedIndex].text;
   return b;
@@ -468,9 +476,13 @@ function calcular(){
   const rh=$('rolloHint');
   if(r.recTela>0){
     const usoTela=r.recTela*r.areaRec/Math.max(0.01,b.anchoTela)*100;
-    rh.innerHTML=`Del rollo de ${num(b.anchoTela,2)} m salen <b>${num(r.recTela)} recortes</b> de `+
-      `${num(r.telaW,0)} × ${num(r.telaH,0)} mm por metro lineal — ${ars(b.pTela/r.recTela)} cada uno, `+
-      `${num(100-usoTela,0)}% de descarte. Friselina: ${num(r.recFris)} por metro (${ars(b.pFris/r.recFris)} cada uno).`;
+    rh.innerHTML=`<b>Tela</b> ${ars(b.pTela)}/m lineal (rollo de ${num(b.anchoTela,2)} × ${num(b.largoTela,0)} m): `+
+      `<b>${num(r.recTela)} recortes</b> de ${num(r.telaW,0)} × ${num(r.telaH,0)} mm por metro, `+
+      `${ars(b.pTela/r.recTela)} cada uno, ${num(100-usoTela,0)}% de descarte.<br>`+
+      `<b>Friselina</b> ${ars(b.pFris)}/m lineal (rollo de ${num(b.anchoFris,2)} × ${num(b.largoFris,0)} m): `+
+      (r.recFris>0
+        ? `${num(r.recFris)} por metro, ${ars(b.pFris/r.recFris)} cada uno · alcanza para <b>${num(r.recFris*b.largoFris)} recortes</b> por rollo.`
+        : `⚠ el recorte no entra en un rollo de ${num(b.anchoFris,2)} m.`);
     rh.style.color='';
   }else{
     rh.textContent=`⚠ el recorte de ${num(r.telaW,0)} × ${num(r.telaH,0)} mm no entra en un rollo de ${num(b.anchoTela,2)} m`;
@@ -567,7 +579,7 @@ $('preBast').addEventListener('change',e=>{
 $('preTela').addEventListener('change',e=>{
   const v=e.target.value;
   if(v==='custom')return;
-  $('pTela').value=String(parseFloat(v)).replace('.',','); guardar(); calcular();
+  $('pRolloTela').value=String(parseFloat(v)).replace('.',','); $('largoTela').value='1'; guardar(); calcular();
 });
 $('modSel').addEventListener('change',e=>{
   const m=MODELOS[+e.target.value];
@@ -591,7 +603,7 @@ $('modBorrar').addEventListener('click',()=>{
 });
 $('aplicar').addEventListener('click',()=>{
   const f=leer('ajuste'); if(!(f>0))return;
-  ['pTela','pFris','pCono','pAbrojo','pKwh','costoMaqMin','manoHora'].forEach(k=>{
+  ['pRolloTela','pRolloFris','pCono','pAbrojo','pKwh','costoMaqMin','manoHora'].forEach(k=>{
     $(k).value=String(+(leer(k)*f).toFixed(2)).replace('.',',');
   });
   $('ajuste').value='1'; guardar(); calcular();
