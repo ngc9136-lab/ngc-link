@@ -210,7 +210,7 @@ tr.tot td{border-top:1.5px solid var(--line);border-bottom:0;padding-top:9px;fon
             <div class="f"><label for="factorHilo">Factor hilo <span class="u">canilla/merma</span></label><input id="factorHilo" type="text" inputmode="decimal"></div>
             <div class="f"><label for="pAbrojo">Abrojo <span class="u">$/metro</span></label><input id="pAbrojo" type="text" inputmode="decimal"></div>
             <div class="f"><label for="anchoAbrojo">Ancho del rollo <span class="u">cm</span></label><input id="anchoAbrojo" type="text" inputmode="decimal"></div>
-            <div class="f"><label for="pKwh">Electricidad <span class="u">$/kWh</span></label><input id="pKwh" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="pKwh">Electricidad <span class="u">$/kWh con impuestos</span></label><input id="pKwh" type="text" inputmode="decimal"></div>
             <div class="f"><label for="kwBord">Consumo bordadora <span class="u">kW</span></label><input id="kwBord" type="text" inputmode="decimal"></div>
             <div class="f"><label for="kwTaller">Consumo taller <span class="u">kW</span></label><input id="kwTaller" type="text" inputmode="decimal"></div>
             <div class="f"><label for="costoMaqMin">Máquina <span class="u">$/min</span></label><input id="costoMaqMin" type="text" inputmode="decimal"></div>
@@ -230,7 +230,8 @@ tr.tot td{border-top:1.5px solid var(--line);border-bottom:0;padding-top:9px;fon
           </div>
           <div class="note">Los valores de tela, friselina, hilo, abrojo y máquina salen de tu planilla, columna
             <b>Precios 07/11/2023</b> — están viejos: usá <b>Actualizar todos los precios ×</b> para llevarlos a hoy de una sola vez.
-            Electricidad, mano de obra y gastos generales no estaban en la planilla: son estimaciones, cargá las tuyas.</div>
+            La electricidad sale de la factura de Edesur de agosto 2026 (T1-R sin subsidio): el kWh marginal
+            <b>$169,686 + 27,435% de impuestos = $216,24</b>. Mano de obra y gastos generales siguen siendo estimaciones.</div>
         </div>
       </section>
     </div>
@@ -271,7 +272,7 @@ const DEF={
   bastW:36, bastH:24, parW:9, parH:7, sep:1, porBast:1, autoFit:false,
   puntadas:30000, ppm:335, prep:10, tCorte:2, conAbrojo:true, tAbrojo:3, cantidad:20,
   pTela:4000, pFris:13333.33, pCono:5800, rendCono:500000, factorHilo:1,
-  pAbrojo:1500, anchoAbrojo:5, pKwh:120, kwBord:0.75, kwTaller:0.3,
+  pAbrojo:1500, anchoAbrojo:5, pKwh:216.24, kwBord:0.75, kwTaller:0.3,
   costoMaqMin:3.5, manoHora:8000, superv:20, merma:10, overhead:10, markup:3, mayor:75,
   preBast:'36x24', preTela:'4000'
 };
