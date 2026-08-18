@@ -100,6 +100,17 @@ td.n{text-align:right;font-family:'IBM Plex Mono',monospace;font-variant-numeric
 td.p{text-align:right;color:var(--muted);font-family:'IBM Plex Mono',monospace;font-size:12px;width:44px}
 .dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:8px;vertical-align:1px}
 tr.tot td{border-top:1.5px solid var(--line);border-bottom:0;padding-top:9px;font-weight:600}
+.scroll{overflow-x:auto;margin-top:14px}
+.mods{font-size:13px;min-width:520px}
+.mods th{font-family:'Chakra Petch',sans-serif;font-size:10.5px;font-weight:700;letter-spacing:.7px;
+  text-transform:uppercase;color:var(--muted);text-align:right;padding:0 0 6px 10px;white-space:nowrap}
+.mods th:first-child{text-align:left;padding-left:0}
+.mods td{padding:7px 0 7px 10px;text-align:right;font-family:'IBM Plex Mono',monospace;
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.mods td:first-child{text-align:left;padding-left:0;font-family:'IBM Plex Sans',sans-serif;white-space:normal}
+.mods tr.on td{color:var(--accent);font-weight:600}
+.mods tr.on td:first-child::before{content:'▸ ';font-family:'IBM Plex Mono',monospace}
+#modNombre{font-family:'IBM Plex Sans',sans-serif}
 .sale{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
 .tile{background:var(--surface2);border:1px solid var(--line2);border-radius:10px;padding:10px 12px}
 .tile .v{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums;font-weight:600;font-size:17px;margin-top:2px}
@@ -139,6 +150,24 @@ tr.tot td{border-top:1.5px solid var(--line);border-bottom:0;padding-top:9px;fon
     <div class="stack">
 
       <section class="card">
+        <header><h2><span class="n">00</span>Modelo de parche</h2><span class="hint" id="modHint"></span></header>
+        <div class="body">
+          <div class="grid">
+            <div class="f"><label for="modSel">Modelo guardado</label><select id="modSel"></select></div>
+            <div class="f"><label for="modNombre">Nombre del modelo</label><input id="modNombre" type="text" placeholder="ARG7 · ARGENTINA"></div>
+          </div>
+          <div class="rowbtns">
+            <button id="modGuardar" type="button">Guardar modelo</button>
+            <button id="modBorrar" type="button">Borrar modelo</button>
+          </div>
+          <div class="scroll"><table class="mods" id="modTabla"></table></div>
+          <div class="note">Cada modelo guarda su bastidor, medida, puntadas, velocidad y confección. La tabla recalcula
+            todos los modelos con los costos base de hoy, así comparás de un vistazo el <b>costo unitario</b> y el
+            <b>costo por bandeja</b> de cada uno.</div>
+        </div>
+      </section>
+
+      <section class="card">
         <header><h2><span class="n">01</span>Bastidor y parche</h2><span class="hint" id="fitHint"></span></header>
         <div class="body">
           <div class="grid">
@@ -157,7 +186,7 @@ tr.tot td{border-top:1.5px solid var(--line);border-bottom:0;padding-top:9px;fon
             <div class="f"><label for="parW">Ancho parche <span class="u">mm</span></label><input id="parW" type="text" inputmode="decimal"></div>
             <div class="f"><label for="parH">Alto parche <span class="u">mm</span></label><input id="parH" type="text" inputmode="decimal"></div>
             <div class="f"><label for="sep">Separación <span class="u">mm</span></label><input id="sep" type="text" inputmode="decimal"></div>
-            <div class="f"><label for="porBast">Parches por bastidor</label><input id="porBast" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="porBast">Parches por bandeja</label><input id="porBast" type="text" inputmode="decimal"></div>
             <label class="chk" for="autoFit"><input type="checkbox" id="autoFit"> Calcular automático</label>
           </div>
           <div class="note">El área del bastidor define cuánta tela y friselina se consume. Si entra más de un parche por bastidor,
@@ -174,11 +203,12 @@ tr.tot td{border-top:1.5px solid var(--line);border-bottom:0;padding-top:9px;fon
           <div class="grid">
             <div class="f"><label for="puntadas">Puntadas <span class="u">del diseño</span></label><input id="puntadas" type="text" inputmode="decimal"></div>
             <div class="f"><label for="ppm">Velocidad <span class="u">puntadas/min</span></label><input id="ppm" type="text" inputmode="decimal"></div>
-            <div class="f"><label for="prep">Preparación <span class="u">min/bastidor</span></label><input id="prep" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="prep">Preparación <span class="u">min/bandeja</span></label><input id="prep" type="text" inputmode="decimal"></div>
             <div class="f"><label for="tMaq">Tiempo máquina <span class="u">min/parche</span></label><input id="tMaq" type="text" readonly></div>
           </div>
-          <div class="note">Velocidad <b>efectiva</b>: incluye cambios de color y paradas. Con los datos de la planilla
-            (70.500 puntadas en 210 min) da unas <b>335 puntadas/min</b>.</div>
+          <div class="note">Velocidad <b>efectiva</b>: incluye cambios de color, cortes y paradas. La bordadora está seteada en
+            <b>400</b> (máximo 440), pero su estimación de tiempo no descuenta los cambios: medí una corrida real
+            —puntadas de la bandeja ÷ minutos de reloj— y cargá ese número, que es el que decide el costo del tiempo.</div>
         </div>
       </section>
 
@@ -258,7 +288,8 @@ tr.tot td{border-top:1.5px solid var(--line);border-bottom:0;padding-top:9px;fon
           <div class="tile ok"><div class="k">Mayorista</div><div class="v" id="oMay">—</div></div>
         </div>
 
-        <div class="meta"><span class="k">Pedido <span id="oCant"></span> u.</span><span id="oTotal">—</span></div>
+        <div class="meta"><span class="k">Bandeja <span id="oPorBand"></span> u.</span><span id="oBandeja">—</span></div>
+        <div class="meta" style="border:0;margin-top:0;padding-top:4px"><span class="k">Pedido <span id="oCant"></span> u.</span><span id="oTotal">—</span></div>
         <div class="meta" style="border:0;margin-top:0;padding-top:4px"><span class="k">Tiempo total</span><span id="oTiempo">—</span></div>
       </div>
     </aside>
@@ -273,18 +304,26 @@ tr.tot td{border-top:1.5px solid var(--line);border-bottom:0;padding-top:9px;fon
 <script>
 const DEF={
   bastW:360, bastH:240, excedente:30, parW:90, parH:70, sep:10, porBast:1, autoFit:false,
-  puntadas:30000, ppm:335, prep:10, tCorte:2, conAbrojo:true, tAbrojo:3, cantidad:20,
+  puntadas:30000, ppm:400, prep:10, tCorte:2, conAbrojo:true, tAbrojo:3, cantidad:20,
   pTela:4000, pFris:13333.33, pCono:5800, rendCono:500000, factorHilo:1,
   pAbrojo:1500, anchoAbrojo:5, pKwh:216.24, kwBord:0.75, kwTaller:0.3,
-  costoMaqMin:3.5, manoHora:8000, superv:20, merma:0, overhead:10, markup:3, mayor:75,
-  preBast:'360x240', preTela:'4000', u:'mm5'
+  costoMaqMin:3.5, manoHora:2500, superv:20, merma:0, overhead:10, markup:3, mayor:75,
+  preBast:'360x240', preTela:'4000', u:'mm6'
 };
+// modelo real medido en la bordadora: 16 ARGENTINA en el bastidor N° 1, 117.529 puntadas la bandeja
+const MODELOS_DEF=[{nombre:'ARG7 · ARGENTINA', preBast:'360x240', bastW:360, bastH:240,
+  parW:85, parH:55, sep:2, porBast:16, autoFit:false, puntadas:7346, ppm:400, prep:10,
+  tCorte:2, conAbrojo:true, tAbrojo:3}];
+
 const NUM=['bastW','bastH','excedente','parW','parH','sep','porBast','puntadas','ppm','prep','tCorte','tAbrojo','cantidad',
   'pTela','pFris','pCono','rendCono','factorHilo','pAbrojo','anchoAbrojo','pKwh','kwBord','kwTaller',
   'costoMaqMin','manoHora','superv','merma','overhead','markup','mayor'];
 const CHK=['autoFit','conAbrojo'], SEL=['preBast','preTela'];
-const $=id=>document.getElementById(id);
+// lo que define a un modelo de parche, aparte de los costos base
+const MOD_NUM=['bastW','bastH','parW','parH','sep','porBast','puntadas','ppm','prep','tCorte','tAbrojo'];
+const MOD_CHK=['autoFit','conAbrojo'], MOD_SEL=['preBast'];
 
+const $=id=>document.getElementById(id);
 const ars=(v,d=2)=>isFinite(v)?v.toLocaleString('es-AR',{style:'currency',currency:'ARS',minimumFractionDigits:d,maximumFractionDigits:d}):'—';
 const num=(v,d=0)=>isFinite(v)?v.toLocaleString('es-AR',{minimumFractionDigits:d,maximumFractionDigits:d}):'—';
 function leer(id){
@@ -296,7 +335,9 @@ function leer(id){
   const n=parseFloat(t);
   return isFinite(n)?n:0;
 }
+const esc=t=>String(t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
+/* ---------------- estado ---------------- */
 function cargar(){
   let s={};
   try{ s=JSON.parse(localStorage.getItem('ngc-parches')||'{}'); }catch(e){ s={}; }
@@ -304,7 +345,8 @@ function cargar(){
     ['bastW','bastH','parW','parH','sep'].forEach(k=>{ if(s[k]!==undefined) s[k]=s[k]*10; });
     delete s.merma; delete s.excedente; delete s.preBast;
   }
-  if(s.u!=='mm5') delete s.excedente;           // excedente definido: 30 mm por lado
+  if(s.u!=='mm5'&&s.u!=='mm6') delete s.excedente;   // excedente definido: 30 mm por lado
+  if(s.u!=='mm6'){ delete s.manoHora; delete s.ppm; }// mano de obra $2.500/h y 400 puntadas/min
   const d={...DEF,...s};
   NUM.forEach(k=>$(k).value=String(d[k]).replace('.',','));
   CHK.forEach(k=>$(k).checked=!!d[k]);
@@ -319,97 +361,161 @@ function guardar(){
   NUM.forEach(k=>d[k]=leer(k));
   CHK.forEach(k=>d[k]=$(k).checked);
   SEL.forEach(k=>d[k]=$(k).value);
-  d.u='mm5';
+  d.u='mm6';
   try{ localStorage.setItem('ngc-parches',JSON.stringify(d)); }catch(e){}
 }
+function cargarModelos(){
+  try{
+    const m=JSON.parse(localStorage.getItem('ngc-parches-modelos'));
+    if(Array.isArray(m)) return m;
+  }catch(e){}
+  return MODELOS_DEF.slice();
+}
+function guardarModelos(m){
+  try{ localStorage.setItem('ngc-parches-modelos',JSON.stringify(m)); }catch(e){}
+}
+let MODELOS=cargarModelos();
 
+/* ---------------- costeo ---------------- */
 function encajan(BW,BH,pw,ph,s){   // 0 = el parche no entra en el bastidor
   if(pw<=0||ph<=0) return 1;
   const fit=(w,h)=>Math.max(0,Math.floor((BW+s)/(w+s)))*Math.max(0,Math.floor((BH+s)/(h+s)));
   return Math.max(fit(pw,ph),fit(ph,pw));
 }
-
-function calcular(){
-  const BW=leer('bastW'), BH=leer('bastH'), pw=leer('parW'), ph=leer('parH'), s=leer('sep');
-  const exc=leer('excedente');              // sobrante para agarrar la tela al bastidor
-  const telaW=BW+2*exc, telaH=BH+2*exc;     // pieza de cordura y de friselina que hay que cortar, en mm
-  const auto=$('autoFit').checked;
-  $('porBast').readOnly=auto;
-  const cabe=encajan(BW,BH,pw,ph,s);
-  let n=auto?Math.max(1,cabe):Math.max(1,Math.round(leer('porBast')));
-  if(auto) $('porBast').value=n;
-  const hint=$('fitHint');
-  hint.textContent=cabe===0
-    ? `⚠ el parche de ${num(pw,0)} × ${num(ph,0)} mm no entra en este bastidor`
-    : `2 recortes de ${num(telaW,0)} × ${num(telaH,0)} mm = ${num(telaW*telaH/1e6,4)} m² · ${n} parche${n>1?'s':''} por puesta`;
-  hint.style.color=cabe===0?'var(--warn)':'';
-
-  const puntadas=leer('puntadas'), ppm=Math.max(1,leer('ppm'));
-  const tMaq=puntadas/ppm + leer('prep')/n;
-  $('tMaq').value=num(tMaq,1);
-  $('maqHint').textContent=`${num(tMaq*n,1)} min por bastidor`;
-
-  const areaBast=(telaW*telaH)/1e6/n*(1+leer('merma')/100);     // m² de tela y friselina por parche
-  const areaPar=(pw*ph)/1e6;                                    // m² del parche terminado
-  const abrojoOn=$('conAbrojo').checked;
-  const anchoRollo=Math.max(0.01,leer('anchoAbrojo')/100);
-  const tMan=leer('tCorte')+(abrojoOn?leer('tAbrojo'):0);
-  const hHombre=tMan/60 + (tMaq/60)*(leer('superv')/100);
-
-  const selTela=$('preTela');                               // recorte igual, precio distinto
-  const nombreTela=selTela.value==='custom' ? 'Tela' : selTela.options[selTela.selectedIndex].text;
-
-  const cHiloPunt=leer('rendCono')>0 ? leer('pCono')/leer('rendCono')*leer('factorHilo') : 0;
-
+function base(){
+  const b={};
+  ['excedente','merma','pTela','pFris','pCono','rendCono','factorHilo','pAbrojo','anchoAbrojo',
+   'pKwh','kwBord','kwTaller','costoMaqMin','manoHora','superv','overhead','markup','mayor'].forEach(k=>b[k]=leer(k));
+  const sel=$('preTela');
+  b.nombreTela = sel.value==='custom' ? 'Tela' : sel.options[sel.selectedIndex].text;
+  return b;
+}
+function modeloActual(){
+  const m={};
+  MOD_NUM.forEach(k=>m[k]=leer(k));
+  MOD_CHK.forEach(k=>m[k]=$(k).checked);
+  MOD_SEL.forEach(k=>m[k]=$(k).value);
+  m.nombre=$('modNombre').value.trim();
+  return m;
+}
+function costear(m,b){
+  const telaW=m.bastW+2*b.excedente, telaH=m.bastH+2*b.excedente;   // los dos recortes, en mm
+  const cabe=encajan(m.bastW,m.bastH,m.parW,m.parH,m.sep);
+  const n=m.autoFit?Math.max(1,cabe):Math.max(1,Math.round(m.porBast));   // parches por bandeja
+  const tMaq=m.puntadas/Math.max(1,m.ppm) + m.prep/n;                     // min de máquina por parche
+  const tMan=m.tCorte+(m.conAbrojo?m.tAbrojo:0);                          // min de mano por parche
+  const areaTela=(telaW*telaH)/1e6/n*(1+b.merma/100);
+  const areaPar=(m.parW*m.parH)/1e6;
+  const anchoRollo=Math.max(0.01,b.anchoAbrojo/100);
+  const hHombre=tMan/60 + (tMaq/60)*(b.superv/100);
+  const cHiloPunt=b.rendCono>0 ? b.pCono/b.rendCono*b.factorHilo : 0;
   const items=[
-    ['Hilo',        puntadas*cHiloPunt,                                     'var(--c1)'],
-    [nombreTela,    areaBast*leer('pTela'),                                 'var(--c2)'],
-    ['Friselina',   areaBast*leer('pFris'),                                 'var(--c3)'],
-    ['Abrojo',      abrojoOn?areaPar/anchoRollo*leer('pAbrojo'):0,          'var(--c4)'],
-    ['Máquina',     tMaq*leer('costoMaqMin'),                               'var(--c5)'],
-    ['Electricidad',(leer('kwBord')*tMaq/60 + leer('kwTaller')*tMan/60)*leer('pKwh'), 'var(--c6)'],
-    ['Mano de obra',hHombre*leer('manoHora'),                               'var(--c7)']
+    ['Hilo',        m.puntadas*cHiloPunt,                                        'var(--c1)'],
+    [b.nombreTela,  areaTela*b.pTela,                                            'var(--c2)'],
+    ['Friselina',   areaTela*b.pFris,                                            'var(--c3)'],
+    ['Abrojo',      m.conAbrojo?areaPar/anchoRollo*b.pAbrojo:0,                  'var(--c4)'],
+    ['Máquina',     tMaq*b.costoMaqMin,                                          'var(--c5)'],
+    ['Electricidad',(b.kwBord*tMaq/60 + b.kwTaller*tMan/60)*b.pKwh,              'var(--c6)'],
+    ['Mano de obra',hHombre*b.manoHora,                                          'var(--c7)']
   ];
-  const directo=items.reduce((a,b)=>a+b[1],0);
-  const gg=directo*leer('overhead')/100;
+  const directo=items.reduce((a,x)=>a+x[1],0);
+  const gg=directo*b.overhead/100;
   if(gg>0) items.push(['Gastos generales',gg,'var(--c8)']);
   const costo=directo+gg;
+  return {n,cabe,telaW,telaH,tMaq,tMan,items,costo,cHiloPunt,
+          vp:m.puntadas>0?costo/m.puntadas:0, pvp:costo*b.markup, may:costo*b.markup*b.mayor/100};
+}
 
-  $('oCosto').textContent=ars(costo);
-  $('mCosto').textContent=ars(costo,0);
-  const vp=puntadas>0?costo/puntadas:0;
-  $('oPuntada').textContent=ars(vp,4);
-  $('mPuntada').textContent=ars(vp,4);
-  $('oPuntadaHilo').textContent=`solo hilo ${ars(cHiloPunt,4)} · cada 1.000 puntadas ${ars(vp*1000)}`;
+/* ---------------- pantalla ---------------- */
+function calcular(){
+  const b=base(), m=modeloActual(), r=costear(m,b);
+  $('porBast').readOnly=m.autoFit;
+  if(m.autoFit) $('porBast').value=r.n;
 
-  $('bar').innerHTML=items.filter(i=>i[1]>0)
-    .map(i=>`<i style="background:${i[2]};width:${(i[1]/costo*100).toFixed(2)}%"></i>`).join('');
-  $('tabla').querySelector('tbody').innerHTML=items.map(i=>
-    `<tr><td><span class="dot" style="background:${i[2]}"></span>${i[0]}</td>
-     <td class="n">${ars(i[1])}</td><td class="p">${costo>0?(i[1]/costo*100).toFixed(0):0}%</td></tr>`).join('')
-    +`<tr class="tot"><td>Costo unitario</td><td class="n">${ars(costo)}</td><td class="p"></td></tr>`;
+  const hint=$('fitHint');
+  hint.textContent = r.cabe===0
+    ? `⚠ el parche de ${num(m.parW,0)} × ${num(m.parH,0)} mm no entra en este bastidor`
+    : `2 recortes de ${num(r.telaW,0)} × ${num(r.telaH,0)} mm = ${num(r.telaW*r.telaH/1e6,4)} m² · ${r.n} parche${r.n>1?'s':''} por bandeja`;
+  hint.style.color = r.cabe===0 ? 'var(--warn)' : '';
 
-  const mk=leer('markup'), pvp=costo*mk, may=pvp*leer('mayor')/100;
-  $('oMk').textContent=num(mk,mk%1?1:0);
-  $('oPvp').textContent=ars(pvp,0);
-  $('oMay').textContent=ars(may,0);
-  const q=Math.max(1,Math.round(leer('cantidad')));
+  $('tMaq').value=num(r.tMaq,1);
+  $('maqHint').textContent=`${num(r.tMaq*r.n,1)} min de bordado por bandeja · ${num(m.puntadas*r.n)} puntadas`;
+
+  $('oCosto').textContent=ars(r.costo);
+  $('mCosto').textContent=ars(r.costo,0);
+  $('oPuntada').textContent=ars(r.vp,4);
+  $('mPuntada').textContent=ars(r.vp,4);
+  $('oPuntadaHilo').textContent=`solo hilo ${ars(r.cHiloPunt,4)} · cada 1.000 puntadas ${ars(r.vp*1000)}`;
+
+  $('bar').innerHTML=r.items.filter(i=>i[1]>0)
+    .map(i=>`<i style="background:${i[2]};width:${(i[1]/r.costo*100).toFixed(2)}%"></i>`).join('');
+  $('tabla').querySelector('tbody').innerHTML=r.items.map(i=>
+    `<tr><td><span class="dot" style="background:${i[2]}"></span>${esc(i[0])}</td>
+     <td class="n">${ars(i[1])}</td><td class="p">${r.costo>0?(i[1]/r.costo*100).toFixed(0):0}%</td></tr>`).join('')
+    +`<tr class="tot"><td>Costo unitario</td><td class="n">${ars(r.costo)}</td><td class="p"></td></tr>`;
+
+  $('oMk').textContent=num(b.markup,b.markup%1?1:0);
+  $('oPvp').textContent=ars(r.pvp,0);
+  $('oMay').textContent=ars(r.may,0);
+
+  $('oPorBand').textContent=num(r.n);
+  $('oBandeja').textContent=`${ars(r.costo*r.n,0)} costo · ${ars(r.pvp*r.n,0)} venta`;
+
+  const q=Math.max(1,Math.round(leer('cantidad'))), bandejas=Math.ceil(q/r.n);
   $('oCant').textContent=num(q);
-  $('oTotal').textContent=`${ars(costo*q,0)} costo · ${ars(pvp*q,0)} venta`;
-  const min=(tMaq+tMan)*q;
-  $('oTiempo').textContent=`${num(Math.floor(min/60))} h ${num(Math.round(min%60))} min`;
+  $('oTotal').textContent=`${ars(r.costo*q,0)} costo · ${bandejas} bandeja${bandejas>1?'s':''}`;
+  const min=Math.round((r.tMaq+r.tMan)*q);
+  $('oTiempo').textContent=`${num(Math.floor(min/60))} h ${num(min%60)} min`;
+
+  tablaModelos(b);
 
   window.__resumen=()=>[
-    `PARCHE · ${num(puntadas)} puntadas · ${num(pw,0)}×${num(ph,0)} mm${abrojoOn?' · con abrojo':''}`,
-    ...items.map(i=>`${i[0]}: ${ars(i[1])}`),
-    `COSTO UNITARIO: ${ars(costo)}`,
-    `Valor de la puntada: ${ars(vp,4)}`,
-    `Precio público (×${num(mk,mk%1?1:0)}): ${ars(pvp,0)} · Mayorista: ${ars(may,0)}`,
-    `Pedido ${num(q)} u.: ${ars(costo*q,0)} de costo · ${ars(pvp*q,0)} de venta`
+    `${m.nombre||'PARCHE'} · ${num(m.puntadas)} puntadas · ${num(m.parW,0)}×${num(m.parH,0)} mm${m.conAbrojo?' · con abrojo':''}`,
+    `Bandeja de ${r.n} u. en bastidor ${num(m.bastW,0)}×${num(m.bastH,0)} mm`,
+    ...r.items.map(i=>`${i[0]}: ${ars(i[1])}`),
+    `COSTO UNITARIO: ${ars(r.costo)}`,
+    `COSTO POR BANDEJA (${r.n} u.): ${ars(r.costo*r.n,0)}`,
+    `Valor de la puntada: ${ars(r.vp,4)}`,
+    `Precio público (×${num(b.markup,b.markup%1?1:0)}): ${ars(r.pvp,0)} · Mayorista: ${ars(r.may,0)}`,
+    `Pedido ${num(q)} u.: ${ars(r.costo*q,0)} de costo · ${bandejas} bandeja${bandejas>1?'s':''}`
   ].join('\n');
 }
 
-/* eventos */
+function tablaModelos(b){
+  const sel=$('modSel'), actual=sel.value;
+  sel.innerHTML='<option value="">— sin modelo —</option>'+
+    MODELOS.map((m,i)=>`<option value="${i}">${esc(m.nombre)}</option>`).join('');
+  sel.value=actual;
+
+  const filas=MODELOS.map((m,i)=>{
+    const r=costear(m,b);
+    return `<tr class="${String(i)===actual?'on':''}"><td>${esc(m.nombre)}</td>
+      <td>${num(m.puntadas)}</td><td>${num(r.n)}</td>
+      <td>${ars(r.costo,0)}</td><td>${ars(r.costo*r.n,0)}</td>
+      <td>${ars(r.vp,4)}</td><td>${ars(r.pvp,0)}</td></tr>`;
+  }).join('');
+  $('modTabla').innerHTML=MODELOS.length
+    ? `<thead><tr><th>Modelo</th><th>Puntadas</th><th>u./bandeja</th><th>Costo u.</th>
+       <th>Costo bandeja</th><th>$/puntada</th><th>Público</th></tr></thead><tbody>${filas}</tbody>`
+    : '';
+  $('modHint').textContent=MODELOS.length
+    ? `${MODELOS.length} modelo${MODELOS.length>1?'s':''} guardado${MODELOS.length>1?'s':''}`
+    : 'todavía no guardaste ningún modelo';
+}
+
+function aplicarModelo(m){
+  MOD_NUM.forEach(k=>{ if(m[k]!==undefined) $(k).value=String(m[k]).replace('.',','); });
+  MOD_CHK.forEach(k=>{ if(m[k]!==undefined) $(k).checked=!!m[k]; });
+  MOD_SEL.forEach(k=>{
+    if(m[k]===undefined) return;
+    $(k).value=m[k];
+    if($(k).selectedIndex<0) $(k).value='custom';
+  });
+  $('modNombre').value=m.nombre||'';
+  guardar(); calcular();
+}
+
+/* ---------------- eventos ---------------- */
 [...NUM,...CHK,...SEL].forEach(k=>{
   const el=$(k), ev=el.type==='checkbox'||el.tagName==='SELECT'?'change':'input';
   el.addEventListener(ev,()=>{guardar();calcular();});
@@ -422,6 +528,26 @@ $('preTela').addEventListener('change',e=>{
   const v=e.target.value;
   if(v==='custom')return;
   $('pTela').value=String(parseFloat(v)).replace('.',','); guardar(); calcular();
+});
+$('modSel').addEventListener('change',e=>{
+  const m=MODELOS[+e.target.value];
+  if(m) aplicarModelo(m); else calcular();
+});
+$('modGuardar').addEventListener('click',()=>{
+  const m=modeloActual();
+  if(!m.nombre){ $('modNombre').focus(); return; }
+  const i=MODELOS.findIndex(x=>x.nombre.toLowerCase()===m.nombre.toLowerCase());
+  if(i>=0) MODELOS[i]=m; else MODELOS.push(m);
+  guardarModelos(MODELOS);
+  calcular();
+  $('modSel').value=String(MODELOS.findIndex(x=>x.nombre===m.nombre));
+  calcular();
+});
+$('modBorrar').addEventListener('click',()=>{
+  const i=+$('modSel').value;
+  if(!MODELOS[i])return;
+  MODELOS.splice(i,1); guardarModelos(MODELOS);
+  $('modSel').value=''; calcular();
 });
 $('aplicar').addEventListener('click',()=>{
   const f=leer('ajuste'); if(!(f>0))return;
