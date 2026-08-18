@@ -189,6 +189,7 @@ tr.tot td{border-top:1.5px solid var(--line);border-bottom:0;padding-top:9px;fon
             <div class="f"><label for="porBast">Parches por bandeja</label><input id="porBast" type="text" inputmode="decimal"></div>
             <label class="chk" for="autoFit"><input type="checkbox" id="autoFit"> Calcular automático</label>
           </div>
+          <div class="note" id="rolloHint"></div>
           <div class="note">El área del bastidor define cuánta tela y friselina se consume. Si entra más de un parche por bastidor,
             la tela y el tiempo de preparación se reparten entre todos. La pieza de tela y la de friselina se cortan
             con un <b>excedente de 30 mm por lado</b> para poder agarrarlas al bastidor: el N° 1 se lleva <b>420 × 300 mm</b>.
@@ -230,14 +231,16 @@ tr.tot td{border-top:1.5px solid var(--line);border-bottom:0;padding-top:9px;fon
           <div class="grid">
             <div class="f"><label for="preTela">Tipo de tela</label>
               <select id="preTela">
-                <option value="4000">Cordura</option>
-                <option value="4000b">Gabardina / UCA</option>
-                <option value="3333.33">Tela jean</option>
+                <option value="6000">Cordura</option>
+                <option value="6000b">Gabardina / UCA</option>
+                <option value="5000">Tela jean</option>
                 <option value="1650">Microfibra</option>
                 <option value="custom">Otra tela</option>
               </select></div>
-            <div class="f"><label for="pTela">Tela <span class="u">$/m²</span></label><input id="pTela" type="text" inputmode="decimal"></div>
-            <div class="f"><label for="pFris">Friselina <span class="u">$/m²</span></label><input id="pFris" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="pTela">Tela <span class="u">$/m lineal</span></label><input id="pTela" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="anchoTela">Ancho rollo tela <span class="u">m</span></label><input id="anchoTela" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="pFris">Friselina <span class="u">$/m lineal</span></label><input id="pFris" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="anchoFris">Ancho rollo friselina <span class="u">m</span></label><input id="anchoFris" type="text" inputmode="decimal"></div>
             <div class="f"><label for="pCono">Cono de hilo <span class="u">$</span></label><input id="pCono" type="text" inputmode="decimal"></div>
             <div class="f"><label for="rendCono">Rinde del cono <span class="u">puntadas</span></label><input id="rendCono" type="text" inputmode="decimal"></div>
             <div class="f"><label for="factorHilo">Factor hilo <span class="u">canilla/merma</span></label><input id="factorHilo" type="text" inputmode="decimal"></div>
@@ -251,6 +254,11 @@ tr.tot td{border-top:1.5px solid var(--line);border-bottom:0;padding-top:9px;fon
             <div class="f"><label for="superv">Supervisión bordado <span class="u">% del tiempo</span></label><input id="superv" type="text" inputmode="decimal"></div>
             <div class="f"><label for="merma">Merma extra <span class="u">% fallas</span></label><input id="merma" type="text" inputmode="decimal"></div>
             <div class="f"><label for="overhead">Gastos generales <span class="u">%</span></label><input id="overhead" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="modoCorte">Costeo de la tela</label>
+              <select id="modoCorte">
+                <option value="rollo">Recortes reales del rollo</option>
+                <option value="area">Superficie neta</option>
+              </select></div>
             <div class="f"><label for="markup">Multiplicador de venta</label><input id="markup" type="text" inputmode="decimal"></div>
             <div class="f"><label for="mayor">Mayorista <span class="u">% del público</span></label><input id="mayor" type="text" inputmode="decimal"></div>
           </div>
@@ -261,8 +269,8 @@ tr.tot td{border-top:1.5px solid var(--line);border-bottom:0;padding-top:9px;fon
             <button id="reset" type="button">Volver a los valores de la planilla</button>
             <button id="copiar" type="button">Copiar resumen</button>
           </div>
-          <div class="note">Los valores de tela, friselina, hilo, abrojo y máquina salen de tu planilla, columna
-            <b>Precios 07/11/2023</b> — están viejos: usá <b>Actualizar todos los precios ×</b> para llevarlos a hoy de una sola vez.
+          <div class="note">Tela y friselina se cargan <b>por metro lineal del rollo</b>; el ancho define cuántos recortes salen y
+            cuánto se descarta. Estos valores salen de tu planilla, columna <b>Precios 07/11/2023</b> — están viejos: usá <b>Actualizar todos los precios ×</b> para llevarlos a hoy de una sola vez.
             La electricidad sale de la factura de Edesur de agosto 2026 (T1-R sin subsidio): el kWh marginal
             <b>$169,686 + 27,435% de impuestos = $216,24</b>. Mano de obra y gastos generales siguen siendo estimaciones.</div>
         </div>
@@ -305,10 +313,10 @@ tr.tot td{border-top:1.5px solid var(--line);border-bottom:0;padding-top:9px;fon
 const DEF={
   bastW:360, bastH:240, excedente:30, parW:90, parH:70, sep:10, porBast:1, autoFit:false,
   puntadas:30000, ppm:400, prep:10, tCorte:2, conAbrojo:true, tAbrojo:3, cantidad:20,
-  pTela:4000, pFris:13333.33, pCono:5800, rendCono:500000, factorHilo:1,
+  pTela:6000, anchoTela:1.5, pFris:20000, anchoFris:1.5, pCono:5800, rendCono:500000, factorHilo:1,
   pAbrojo:1500, anchoAbrojo:5, pKwh:216.24, kwBord:0.75, kwTaller:0.3,
   costoMaqMin:3.5, manoHora:2500, superv:20, merma:0, overhead:10, markup:3, mayor:75,
-  preBast:'360x240', preTela:'4000', u:'mm6'
+  preBast:'360x240', preTela:'6000', modoCorte:'rollo', u:'mm7'
 };
 // modelo real medido en la bordadora: 16 ARGENTINA en el bastidor N° 1, 117.529 puntadas la bandeja
 const MODELOS_DEF=[{nombre:'ARG7 · ARGENTINA', preBast:'360x240', bastW:360, bastH:240,
@@ -316,9 +324,9 @@ const MODELOS_DEF=[{nombre:'ARG7 · ARGENTINA', preBast:'360x240', bastW:360, ba
   tCorte:2, conAbrojo:true, tAbrojo:3}];
 
 const NUM=['bastW','bastH','excedente','parW','parH','sep','porBast','puntadas','ppm','prep','tCorte','tAbrojo','cantidad',
-  'pTela','pFris','pCono','rendCono','factorHilo','pAbrojo','anchoAbrojo','pKwh','kwBord','kwTaller',
+  'pTela','anchoTela','pFris','anchoFris','pCono','rendCono','factorHilo','pAbrojo','anchoAbrojo','pKwh','kwBord','kwTaller',
   'costoMaqMin','manoHora','superv','merma','overhead','markup','mayor'];
-const CHK=['autoFit','conAbrojo'], SEL=['preBast','preTela'];
+const CHK=['autoFit','conAbrojo'], SEL=['preBast','preTela','modoCorte'];
 // lo que define a un modelo de parche, aparte de los costos base
 const MOD_NUM=['bastW','bastH','parW','parH','sep','porBast','puntadas','ppm','prep','tCorte','tAbrojo'];
 const MOD_CHK=['autoFit','conAbrojo'], MOD_SEL=['preBast'];
@@ -346,7 +354,10 @@ function cargar(){
     delete s.merma; delete s.excedente; delete s.preBast;
   }
   if(s.u!=='mm5'&&s.u!=='mm6') delete s.excedente;   // excedente definido: 30 mm por lado
-  if(s.u!=='mm6'){ delete s.manoHora; delete s.ppm; }// mano de obra $2.500/h y 400 puntadas/min
+  if(s.u!=='mm6'&&s.u!=='mm7'){ delete s.manoHora; delete s.ppm; }  // mano de obra $2.500/h, 400 puntadas/min
+  if(s.u!=='mm7'){                              // tela y friselina pasan a $/metro lineal
+    delete s.pTela; delete s.pFris; delete s.preTela;
+  }
   const d={...DEF,...s};
   NUM.forEach(k=>$(k).value=String(d[k]).replace('.',','));
   CHK.forEach(k=>$(k).checked=!!d[k]);
@@ -361,7 +372,7 @@ function guardar(){
   NUM.forEach(k=>d[k]=leer(k));
   CHK.forEach(k=>d[k]=$(k).checked);
   SEL.forEach(k=>d[k]=$(k).value);
-  d.u='mm6';
+  d.u='mm7';
   try{ localStorage.setItem('ngc-parches',JSON.stringify(d)); }catch(e){}
 }
 function cargarModelos(){
@@ -384,8 +395,9 @@ function encajan(BW,BH,pw,ph,s){   // 0 = el parche no entra en el bastidor
 }
 function base(){
   const b={};
-  ['excedente','merma','pTela','pFris','pCono','rendCono','factorHilo','pAbrojo','anchoAbrojo',
+  ['excedente','merma','pTela','anchoTela','pFris','anchoFris','pCono','rendCono','factorHilo','pAbrojo','anchoAbrojo',
    'pKwh','kwBord','kwTaller','costoMaqMin','manoHora','superv','overhead','markup','mayor'].forEach(k=>b[k]=leer(k));
+  b.modoCorte=$('modoCorte').value;
   const sel=$('preTela');
   b.nombreTela = sel.value==='custom' ? 'Tela' : sel.options[sel.selectedIndex].text;
   return b;
@@ -398,21 +410,33 @@ function modeloActual(){
   m.nombre=$('modNombre').value.trim();
   return m;
 }
+// cuántos recortes de w x h salen de un metro lineal de rollo, probando las dos orientaciones
+function porMetro(anchoM,w,h){
+  const W=anchoM*1000, L=1000;
+  if(w<=0||h<=0||W<=0) return 0;
+  return Math.max(Math.floor(W/w)*Math.floor(L/h), Math.floor(W/h)*Math.floor(L/w));
+}
 function costear(m,b){
   const telaW=m.bastW+2*b.excedente, telaH=m.bastH+2*b.excedente;   // los dos recortes, en mm
   const cabe=encajan(m.bastW,m.bastH,m.parW,m.parH,m.sep);
   const n=m.autoFit?Math.max(1,cabe):Math.max(1,Math.round(m.porBast));   // parches por bandeja
   const tMaq=m.puntadas/Math.max(1,m.ppm) + m.prep/n;                     // min de máquina por parche
   const tMan=m.tCorte+(m.conAbrojo?m.tAbrojo:0);                          // min de mano por parche
-  const areaTela=(telaW*telaH)/1e6/n*(1+b.merma/100);
+  const mermaF=1+b.merma/100, areaRec=(telaW*telaH)/1e6;
+  const recTela=porMetro(b.anchoTela,telaW,telaH), recFris=porMetro(b.anchoFris,telaW,telaH);
+  // en modo rollo se paga el metro lineal completo: lo que sobra al costado es descarte
+  const cTela=(b.modoCorte==='area' ? areaRec*b.pTela/Math.max(0.01,b.anchoTela)
+                                    : (recTela>0 ? b.pTela/recTela : 0))*mermaF/n;
+  const cFris=(b.modoCorte==='area' ? areaRec*b.pFris/Math.max(0.01,b.anchoFris)
+                                    : (recFris>0 ? b.pFris/recFris : 0))*mermaF/n;
   const areaPar=(m.parW*m.parH)/1e6;
   const anchoRollo=Math.max(0.01,b.anchoAbrojo/100);
   const hHombre=tMan/60 + (tMaq/60)*(b.superv/100);
   const cHiloPunt=b.rendCono>0 ? b.pCono/b.rendCono*b.factorHilo : 0;
   const items=[
     ['Hilo',        m.puntadas*cHiloPunt,                                        'var(--c1)'],
-    [b.nombreTela,  areaTela*b.pTela,                                            'var(--c2)'],
-    ['Friselina',   areaTela*b.pFris,                                            'var(--c3)'],
+    [b.nombreTela,  cTela,                                                       'var(--c2)'],
+    ['Friselina',   cFris,                                                       'var(--c3)'],
     ['Abrojo',      m.conAbrojo?areaPar/anchoRollo*b.pAbrojo:0,                  'var(--c4)'],
     ['Máquina',     tMaq*b.costoMaqMin,                                          'var(--c5)'],
     ['Electricidad',(b.kwBord*tMaq/60 + b.kwTaller*tMan/60)*b.pKwh,              'var(--c6)'],
@@ -422,7 +446,7 @@ function costear(m,b){
   const gg=directo*b.overhead/100;
   if(gg>0) items.push(['Gastos generales',gg,'var(--c8)']);
   const costo=directo+gg;
-  return {n,cabe,telaW,telaH,tMaq,tMan,items,costo,cHiloPunt,
+  return {n,cabe,telaW,telaH,tMaq,tMan,items,costo,cHiloPunt,recTela,recFris,areaRec,
           vp:m.puntadas>0?costo/m.puntadas:0, pvp:costo*b.markup, may:costo*b.markup*b.mayor/100};
 }
 
@@ -437,6 +461,19 @@ function calcular(){
     ? `⚠ el parche de ${num(m.parW,0)} × ${num(m.parH,0)} mm no entra en este bastidor`
     : `2 recortes de ${num(r.telaW,0)} × ${num(r.telaH,0)} mm = ${num(r.telaW*r.telaH/1e6,4)} m² · ${r.n} parche${r.n>1?'s':''} por bandeja`;
   hint.style.color = r.cabe===0 ? 'var(--warn)' : '';
+
+  const rh=$('rolloHint');
+  if(r.recTela>0){
+    const usoTela=r.recTela*r.areaRec/Math.max(0.01,b.anchoTela)*100;
+    rh.innerHTML=`Del rollo de ${num(b.anchoTela,2)} m salen <b>${num(r.recTela)} recortes</b> de `+
+      `${num(r.telaW,0)} × ${num(r.telaH,0)} mm por metro lineal — ${ars(b.pTela/r.recTela)} cada uno, `+
+      `${num(100-usoTela,0)}% de descarte. Friselina: ${num(r.recFris)} por metro (${ars(b.pFris/r.recFris)} cada uno).`;
+    rh.style.color='';
+  }else{
+    rh.textContent=`⚠ el recorte de ${num(r.telaW,0)} × ${num(r.telaH,0)} mm no entra en un rollo de ${num(b.anchoTela,2)} m`;
+    rh.style.color='var(--warn)';
+  }
+  if(b.modoCorte==='area') rh.innerHTML+=' <b>Costeando por superficie neta</b>, sin contar el descarte del rollo.';
 
   $('tMaq').value=num(r.tMaq,1);
   $('maqHint').textContent=`${num(r.tMaq*r.n,1)} min de bordado por bandeja · ${num(m.puntadas*r.n)} puntadas`;
