@@ -144,11 +144,11 @@ tr.tot td{border-top:1.5px solid var(--line);border-bottom:0;padding-top:9px;fon
           <div class="grid">
             <div class="f"><label for="preBast">Bastidor</label>
               <select id="preBast">
-                <option value="36x35">Grande 36 × 35 cm (planilla)</option>
-                <option value="30x20">30 × 20 cm</option>
-                <option value="20x20">20 × 20 cm</option>
-                <option value="18x13">18 × 13 cm</option>
-                <option value="10x10">10 × 10 cm</option>
+                <option value="36x24">N° 1 — 360 × 240 mm</option>
+                <option value="24x24">N° 12 — 240 × 240 mm</option>
+                <option value="24x20">M1 — 240 × 200 mm</option>
+                <option value="12x11">M2 — 120 × 110 mm</option>
+                <option value="5x5">M3 — 50 × 50 mm</option>
                 <option value="custom">Medida propia</option>
               </select></div>
             <div class="f"><label for="bastW">Ancho bastidor <span class="u">cm</span></label><input id="bastW" type="text" inputmode="decimal"></div>
@@ -160,7 +160,8 @@ tr.tot td{border-top:1.5px solid var(--line);border-bottom:0;padding-top:9px;fon
             <label class="chk" for="autoFit"><input type="checkbox" id="autoFit"> Calcular automático</label>
           </div>
           <div class="note">El área del bastidor define cuánta tela y friselina se consume. Si entra más de un parche por bastidor,
-            la tela y el tiempo de preparación se reparten entre todos.</div>
+            la tela y el tiempo de preparación se reparten entre todos. <b>Si bordás de a uno, elegí el bastidor más chico donde entre el diseño</b>:
+            un parche de 9 × 7 cm solo en el N° 1 gasta 6,5 veces más tela que en el M2.</div>
         </div>
       </section>
 
@@ -267,12 +268,12 @@ tr.tot td{border-top:1.5px solid var(--line);border-bottom:0;padding-top:9px;fon
 
 <script>
 const DEF={
-  bastW:36, bastH:35, parW:9, parH:7, sep:1, porBast:1, autoFit:false,
+  bastW:36, bastH:24, parW:9, parH:7, sep:1, porBast:1, autoFit:false,
   puntadas:30000, ppm:335, prep:10, tCorte:2, conAbrojo:true, tAbrojo:3, cantidad:20,
   pTela:4000, pFris:13333.33, pCono:5800, rendCono:500000, factorHilo:1,
   pAbrojo:1500, anchoAbrojo:5, pKwh:120, kwBord:0.75, kwTaller:0.3,
   costoMaqMin:3.5, manoHora:8000, superv:20, merma:10, overhead:10, markup:3, mayor:75,
-  preBast:'36x35', preTela:'4000'
+  preBast:'36x24', preTela:'4000'
 };
 const NUM=['bastW','bastH','parW','parH','sep','porBast','puntadas','ppm','prep','tCorte','tAbrojo','cantidad',
   'pTela','pFris','pCono','rendCono','factorHilo','pAbrojo','anchoAbrojo','pKwh','kwBord','kwTaller',
@@ -298,7 +299,11 @@ function cargar(){
   const d={...DEF,...s};
   NUM.forEach(k=>$(k).value=String(d[k]).replace('.',','));
   CHK.forEach(k=>$(k).checked=!!d[k]);
-  SEL.forEach(k=>$(k).value=d[k]);
+  SEL.forEach(k=>{
+    const el=$(k);
+    el.value=d[k];
+    if(el.selectedIndex<0) el.value='custom';   // medida guardada que ya no está en la lista
+  });
 }
 function guardar(){
   const d={};
@@ -308,19 +313,24 @@ function guardar(){
   try{ localStorage.setItem('ngc-parches',JSON.stringify(d)); }catch(e){}
 }
 
-function encajan(BW,BH,pw,ph,s){
+function encajan(BW,BH,pw,ph,s){   // 0 = el parche no entra en el bastidor
   if(pw<=0||ph<=0) return 1;
   const fit=(w,h)=>Math.max(0,Math.floor((BW+s)/(w+s)))*Math.max(0,Math.floor((BH+s)/(h+s)));
-  return Math.max(1,fit(pw,ph),fit(ph,pw));
+  return Math.max(fit(pw,ph),fit(ph,pw));
 }
 
 function calcular(){
   const BW=leer('bastW'), BH=leer('bastH'), pw=leer('parW'), ph=leer('parH'), s=leer('sep');
   const auto=$('autoFit').checked;
   $('porBast').readOnly=auto;
-  let n=auto?encajan(BW,BH,pw,ph,s):Math.max(1,Math.round(leer('porBast')));
+  const cabe=encajan(BW,BH,pw,ph,s);
+  let n=auto?Math.max(1,cabe):Math.max(1,Math.round(leer('porBast')));
   if(auto) $('porBast').value=n;
-  $('fitHint').textContent=`bastidor ${num(BW*BH/10000,4)} m² · ${n} parche${n>1?'s':''} por puesta`;
+  const hint=$('fitHint');
+  hint.textContent=cabe===0
+    ? `⚠ el parche de ${num(pw,1)} × ${num(ph,1)} cm no entra en este bastidor`
+    : `bastidor ${num(BW*BH/10000,4)} m² · ${n} parche${n>1?'s':''} por puesta`;
+  hint.style.color=cabe===0?'var(--warn)':'';
 
   const puntadas=leer('puntadas'), ppm=Math.max(1,leer('ppm'));
   const tMaq=puntadas/ppm + leer('prep')/n;
