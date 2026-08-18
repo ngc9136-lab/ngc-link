@@ -241,7 +241,7 @@ tr.tot td{border-top:1.5px solid var(--line);border-bottom:0;padding-top:9px;fon
             <div class="f"><label for="anchoTela">Ancho rollo tela <span class="u">m</span></label><input id="anchoTela" type="text" inputmode="decimal"></div>
             <div class="f"><label for="pFris">Friselina <span class="u">$/m lineal</span></label><input id="pFris" type="text" inputmode="decimal"></div>
             <div class="f"><label for="anchoFris">Ancho rollo friselina <span class="u">m</span></label><input id="anchoFris" type="text" inputmode="decimal"></div>
-            <div class="f"><label for="pCono">Cono de hilo <span class="u">$</span></label><input id="pCono" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="pCono">Cono de hilo <span class="u">$ sin IVA</span></label><input id="pCono" type="text" inputmode="decimal"></div>
             <div class="f"><label for="rendCono">Rinde del cono <span class="u">puntadas</span></label><input id="rendCono" type="text" inputmode="decimal"></div>
             <div class="f"><label for="factorHilo">Factor hilo <span class="u">canilla/merma</span></label><input id="factorHilo" type="text" inputmode="decimal"></div>
             <div class="f"><label for="pAbrojo">Abrojo <span class="u">$/metro</span></label><input id="pAbrojo" type="text" inputmode="decimal"></div>
@@ -270,7 +270,9 @@ tr.tot td{border-top:1.5px solid var(--line);border-bottom:0;padding-top:9px;fon
             <button id="copiar" type="button">Copiar resumen</button>
           </div>
           <div class="note">Tela y friselina se cargan <b>por metro lineal del rollo</b>; el ancho define cuántos recortes salen y
-            cuánto se descarta. Estos valores salen de tu planilla, columna <b>Precios 07/11/2023</b> — están viejos: usá <b>Actualizar todos los precios ×</b> para llevarlos a hoy de una sola vez.
+            cuánto se descarta. Los materiales van <b>sin IVA</b> (comprás con factura A, el IVA es crédito fiscal);
+            la luz va con impuestos porque la cuenta de Edesur es consumidor final. El cono de hilo sale de la factura
+            de Bordapack del 25/07/2026 ($5.041,32 neto). Tela y friselina siguen en la columna <b>Precios 07/11/2023</b> — están viejos: usá <b>Actualizar todos los precios ×</b> para llevarlos a hoy de una sola vez.
             La electricidad sale de la factura de Edesur de agosto 2026 (T1-R sin subsidio): el kWh marginal
             <b>$169,686 + 27,435% de impuestos = $216,24</b>. Mano de obra y gastos generales siguen siendo estimaciones.</div>
         </div>
@@ -313,10 +315,10 @@ tr.tot td{border-top:1.5px solid var(--line);border-bottom:0;padding-top:9px;fon
 const DEF={
   bastW:360, bastH:240, excedente:30, parW:90, parH:70, sep:10, porBast:1, autoFit:false,
   puntadas:30000, ppm:400, prep:10, tCorte:2, conAbrojo:true, tAbrojo:3, cantidad:20,
-  pTela:6000, anchoTela:1.5, pFris:20000, anchoFris:1.5, pCono:5800, rendCono:500000, factorHilo:1,
+  pTela:6000, anchoTela:1.5, pFris:20000, anchoFris:1.5, pCono:5041.32, rendCono:500000, factorHilo:1,
   pAbrojo:1500, anchoAbrojo:5, pKwh:216.24, kwBord:0.75, kwTaller:0.3,
   costoMaqMin:3.5, manoHora:2500, superv:20, merma:0, overhead:10, markup:3, mayor:75,
-  preBast:'360x240', preTela:'6000', modoCorte:'rollo', u:'mm7'
+  preBast:'360x240', preTela:'6000', modoCorte:'rollo', u:'mm8'
 };
 // modelo real medido en la bordadora: 16 ARGENTINA en el bastidor N° 1, 117.529 puntadas la bandeja
 const MODELOS_DEF=[{nombre:'ARG7 · ARGENTINA', preBast:'360x240', bastW:360, bastH:240,
@@ -355,9 +357,10 @@ function cargar(){
   }
   if(s.u!=='mm5'&&s.u!=='mm6') delete s.excedente;   // excedente definido: 30 mm por lado
   if(s.u!=='mm6'&&s.u!=='mm7'){ delete s.manoHora; delete s.ppm; }  // mano de obra $2.500/h, 400 puntadas/min
-  if(s.u!=='mm7'){                              // tela y friselina pasan a $/metro lineal
+  if(s.u!=='mm7'&&s.u!=='mm8'){                 // tela y friselina pasan a $/metro lineal
     delete s.pTela; delete s.pFris; delete s.preTela;
   }
+  if(s.u!=='mm8') delete s.pCono;               // cono de hilo: factura Bordapack 25/07/2026, neto
   const d={...DEF,...s};
   NUM.forEach(k=>$(k).value=String(d[k]).replace('.',','));
   CHK.forEach(k=>$(k).checked=!!d[k]);
@@ -372,7 +375,7 @@ function guardar(){
   NUM.forEach(k=>d[k]=leer(k));
   CHK.forEach(k=>d[k]=$(k).checked);
   SEL.forEach(k=>d[k]=$(k).value);
-  d.u='mm7';
+  d.u='mm8';
   try{ localStorage.setItem('ngc-parches',JSON.stringify(d)); }catch(e){}
 }
 function cargarModelos(){
