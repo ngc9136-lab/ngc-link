@@ -162,7 +162,8 @@ tr.tot td{border-top:1.5px solid var(--line);border-bottom:0;padding-top:9px;fon
           </div>
           <div class="note">El área del bastidor define cuánta tela y friselina se consume. Si entra más de un parche por bastidor,
             la tela y el tiempo de preparación se reparten entre todos. La pieza de tela y la de friselina se cortan
-            con un <b>excedente de 30 mm por lado</b> para poder agarrarlas al bastidor. El N° 1 se lleva <b>420 × 300 mm</b> de cordura y otro tanto de friselina.
+            con un <b>excedente de 30 mm por lado</b> para poder agarrarlas al bastidor: el N° 1 se lleva <b>420 × 300 mm</b>.
+            Son dos recortes de la misma medida —uno de tela y uno de friselina— que se costean por separado, cada uno a su precio por m².
             <b>Si bordás de a uno, elegí el bastidor más chico donde entre el diseño.</b></div>
         </div>
       </section>
@@ -199,11 +200,11 @@ tr.tot td{border-top:1.5px solid var(--line);border-bottom:0;padding-top:9px;fon
           <div class="grid">
             <div class="f"><label for="preTela">Tipo de tela</label>
               <select id="preTela">
-                <option value="4000">Cordura — $/m²</option>
+                <option value="4000">Cordura</option>
                 <option value="4000b">Gabardina / UCA</option>
                 <option value="3333.33">Tela jean</option>
                 <option value="1650">Microfibra</option>
-                <option value="custom">Otra</option>
+                <option value="custom">Otra tela</option>
               </select></div>
             <div class="f"><label for="pTela">Tela <span class="u">$/m²</span></label><input id="pTela" type="text" inputmode="decimal"></div>
             <div class="f"><label for="pFris">Friselina <span class="u">$/m²</span></label><input id="pFris" type="text" inputmode="decimal"></div>
@@ -340,7 +341,7 @@ function calcular(){
   const hint=$('fitHint');
   hint.textContent=cabe===0
     ? `⚠ el parche de ${num(pw,0)} × ${num(ph,0)} mm no entra en este bastidor`
-    : `tela y friselina ${num(telaW,0)} × ${num(telaH,0)} mm = ${num(telaW*telaH/1e6,4)} m² · ${n} parche${n>1?'s':''} por puesta`;
+    : `2 recortes de ${num(telaW,0)} × ${num(telaH,0)} mm = ${num(telaW*telaH/1e6,4)} m² · ${n} parche${n>1?'s':''} por puesta`;
   hint.style.color=cabe===0?'var(--warn)':'';
 
   const puntadas=leer('puntadas'), ppm=Math.max(1,leer('ppm'));
@@ -355,11 +356,14 @@ function calcular(){
   const tMan=leer('tCorte')+(abrojoOn?leer('tAbrojo'):0);
   const hHombre=tMan/60 + (tMaq/60)*(leer('superv')/100);
 
+  const selTela=$('preTela');                               // recorte igual, precio distinto
+  const nombreTela=selTela.value==='custom' ? 'Tela' : selTela.options[selTela.selectedIndex].text;
+
   const cHiloPunt=leer('rendCono')>0 ? leer('pCono')/leer('rendCono')*leer('factorHilo') : 0;
 
   const items=[
     ['Hilo',        puntadas*cHiloPunt,                                     'var(--c1)'],
-    ['Tela',        areaBast*leer('pTela'),                                 'var(--c2)'],
+    [nombreTela,    areaBast*leer('pTela'),                                 'var(--c2)'],
     ['Friselina',   areaBast*leer('pFris'),                                 'var(--c3)'],
     ['Abrojo',      abrojoOn?areaPar/anchoRollo*leer('pAbrojo'):0,          'var(--c4)'],
     ['Máquina',     tMaq*leer('costoMaqMin'),                               'var(--c5)'],
