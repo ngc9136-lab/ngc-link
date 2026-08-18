@@ -101,7 +101,7 @@ td.p{text-align:right;color:var(--muted);font-family:'IBM Plex Mono',monospace;f
 .dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:8px;vertical-align:1px}
 tr.tot td{border-top:1.5px solid var(--line);border-bottom:0;padding-top:9px;font-weight:600}
 .scroll{overflow-x:auto;margin-top:14px}
-.mods{font-size:13px;min-width:520px}
+.mods{font-size:13px;min-width:640px}
 .mods th{font-family:'Chakra Petch',sans-serif;font-size:10.5px;font-weight:700;letter-spacing:.7px;
   text-transform:uppercase;color:var(--muted);text-align:right;padding:0 0 6px 10px;white-space:nowrap}
 .mods th:first-child{text-align:left;padding-left:0}
@@ -155,15 +155,26 @@ tr.tot td{border-top:1.5px solid var(--line);border-bottom:0;padding-top:9px;fon
           <div class="grid">
             <div class="f"><label for="modSel">Modelo guardado</label><select id="modSel"></select></div>
             <div class="f"><label for="modNombre">Nombre del modelo</label><input id="modNombre" type="text" placeholder="ARG7 · ARGENTINA"></div>
+            <div class="f"><label for="sku">SKU</label><input id="sku" type="text" placeholder="ARG7"></div>
+            <div class="f"><label for="colores">Colores de hilo</label><input id="colores" type="text" inputmode="decimal"></div>
+            <div class="f" style="grid-column:1/-1"><label for="codigos">Códigos de color <span class="u">separados por coma, en orden de bordado</span></label><input id="codigos" type="text" placeholder="1800, 1801, 1076, 1005, 0015"></div>
           </div>
           <div class="rowbtns">
             <button id="modGuardar" type="button">Guardar modelo</button>
             <button id="modBorrar" type="button">Borrar modelo</button>
+            <button id="copiarFila" type="button">Copiar fila para la planilla</button>
+            <button id="copiarTodo" type="button">Copiar todos los modelos</button>
+            <button id="copiarMat" type="button">Copiar materiales</button>
+            <button id="bajar" type="button" hidden>Descargar .tsv</button>
           </div>
           <div class="scroll"><table class="mods" id="modTabla"></table></div>
-          <div class="note">Cada modelo guarda su bastidor, medida, puntadas, velocidad y confección. La tabla recalcula
-            todos los modelos con los costos base de hoy, así comparás de un vistazo el <b>costo unitario</b> y el
-            <b>costo por bandeja</b> de cada uno.</div>
+          <div class="note">Cada modelo guarda su SKU, colores, códigos de hilo, bastidor, medida, puntadas, velocidad y
+            confección. La tabla recalcula todos los modelos con los costos base de hoy, así comparás de un vistazo el
+            <b>costo unitario</b> y el <b>costo por bandeja</b> de cada uno.<br>
+            <b>Copiar fila</b> deja el costo del modelo listo para pegar en
+            <a href="https://docs.google.com/spreadsheets/d/1WuWghn-0o5N1qhDYSxF6nO8TEz1bRFoDtbIZXEjwSzE/edit" target="_blank" rel="noopener">NGC · Costos de Parches</a>
+            (hoja <b>PARCHES</b>): hacés clic en la primera celda vacía de la columna A y pegás. <b>Copiar materiales</b>
+            deja una foto fechada de todos los precios para la hoja <b>MATERIALES</b>.</div>
         </div>
       </section>
 
@@ -316,7 +327,7 @@ tr.tot td{border-top:1.5px solid var(--line);border-bottom:0;padding-top:9px;fon
 <script>
 const DEF={
   bastW:360, bastH:240, excedente:30, parW:90, parH:70, sep:10, porBast:1, autoFit:false,
-  puntadas:30000, ppm:400, prep:10, tCorte:2, conAbrojo:true, tAbrojo:3, cantidad:20,
+  puntadas:30000, ppm:400, prep:10, tCorte:2, conAbrojo:true, tAbrojo:3, colores:5, cantidad:20,
   pRolloTela:6000, largoTela:1, anchoTela:1.5, pRolloFris:58512.42, largoFris:4, anchoFris:0.5,
   pCono:5041.32, rendCono:500000, factorHilo:1,
   pAbrojo:1500, anchoAbrojo:5, pKwh:216.24, kwBord:0.75, kwTaller:0.3,
@@ -324,16 +335,17 @@ const DEF={
   preBast:'360x240', preTela:'6000', modoCorte:'rollo', u:'mm9'
 };
 // modelo real medido en la bordadora: 16 ARGENTINA en el bastidor N° 1, 117.529 puntadas la bandeja
-const MODELOS_DEF=[{nombre:'ARG7 · ARGENTINA', preBast:'360x240', bastW:360, bastH:240,
+const MODELOS_DEF=[{nombre:'ARG7 · ARGENTINA', sku:'ARG7', colores:5, codigos:'', preBast:'360x240', bastW:360, bastH:240,
   parW:85, parH:55, sep:2, porBast:16, autoFit:false, puntadas:7346, ppm:400, prep:10,
   tCorte:2, conAbrojo:true, tAbrojo:3}];
 
-const NUM=['bastW','bastH','excedente','parW','parH','sep','porBast','puntadas','ppm','prep','tCorte','tAbrojo','cantidad',
+const NUM=['bastW','bastH','excedente','parW','parH','sep','porBast','puntadas','ppm','prep','tCorte','tAbrojo','colores','cantidad',
   'pRolloTela','largoTela','anchoTela','pRolloFris','largoFris','anchoFris','pCono','rendCono','factorHilo','pAbrojo','anchoAbrojo','pKwh','kwBord','kwTaller',
   'costoMaqMin','manoHora','superv','merma','overhead','markup','mayor'];
 const CHK=['autoFit','conAbrojo'], SEL=['preBast','preTela','modoCorte'];
 // lo que define a un modelo de parche, aparte de los costos base
-const MOD_NUM=['bastW','bastH','parW','parH','sep','porBast','puntadas','ppm','prep','tCorte','tAbrojo'];
+const MOD_NUM=['bastW','bastH','parW','parH','sep','porBast','puntadas','ppm','prep','tCorte','tAbrojo','colores'];
+const MOD_TXT=['sku','codigos'];
 const MOD_CHK=['autoFit','conAbrojo'], MOD_SEL=['preBast'];
 
 const $=id=>document.getElementById(id);
@@ -418,6 +430,7 @@ function modeloActual(){
   MOD_NUM.forEach(k=>m[k]=leer(k));
   MOD_CHK.forEach(k=>m[k]=$(k).checked);
   MOD_SEL.forEach(k=>m[k]=$(k).value);
+  MOD_TXT.forEach(k=>m[k]=$(k).value.trim());
   m.nombre=$('modNombre').value.trim();
   return m;
 }
@@ -522,7 +535,7 @@ function calcular(){
   tablaModelos(b);
 
   window.__resumen=()=>[
-    `${m.nombre||'PARCHE'} · ${num(m.puntadas)} puntadas · ${num(m.parW,0)}×${num(m.parH,0)} mm${m.conAbrojo?' · con abrojo':''}`,
+    `${m.sku?m.sku+' · ':''}${m.nombre||'PARCHE'} · ${num(m.puntadas)} puntadas · ${num(m.parW,0)}×${num(m.parH,0)} mm${m.conAbrojo?' · con abrojo':''}`,
     `Bandeja de ${r.n} u. en bastidor ${num(m.bastW,0)}×${num(m.bastH,0)} mm`,
     ...r.items.map(i=>`${i[0]}: ${ars(i[1])}`),
     `COSTO UNITARIO: ${ars(r.costo)}`,
@@ -541,13 +554,13 @@ function tablaModelos(b){
 
   const filas=MODELOS.map((m,i)=>{
     const r=costear(m,b);
-    return `<tr class="${String(i)===actual?'on':''}"><td>${esc(m.nombre)}</td>
-      <td>${num(m.puntadas)}</td><td>${num(r.n)}</td>
+    return `<tr class="${String(i)===actual?'on':''}"><td>${esc(m.sku||'—')}</td><td>${esc(m.nombre)}</td>
+      <td>${num(m.puntadas)}</td><td>${m.colores?num(m.colores):'—'}</td><td>${num(r.n)}</td>
       <td>${ars(r.costo,0)}</td><td>${ars(r.costo*r.n,0)}</td>
       <td>${ars(r.vp,4)}</td><td>${ars(r.pvp,0)}</td></tr>`;
   }).join('');
   $('modTabla').innerHTML=MODELOS.length
-    ? `<thead><tr><th>Modelo</th><th>Puntadas</th><th>u./bandeja</th><th>Costo u.</th>
+    ? `<thead><tr><th>SKU</th><th>Modelo</th><th>Puntadas</th><th>Col.</th><th>u./bandeja</th><th>Costo u.</th>
        <th>Costo bandeja</th><th>$/puntada</th><th>Público</th></tr></thead><tbody>${filas}</tbody>`
     : '';
   $('modHint').textContent=MODELOS.length
@@ -563,8 +576,50 @@ function aplicarModelo(m){
     $(k).value=m[k];
     if($(k).selectedIndex<0) $(k).value='custom';
   });
+  MOD_TXT.forEach(k=>$(k).value=m[k]||'');
   $('modNombre').value=m.nombre||'';
   guardar(); calcular();
+}
+
+/* ---------------- exportar a la planilla ---------------- */
+const HOY=()=>new Date().toISOString().slice(0,10);
+const n2=(v,d=0)=>Number(v).toFixed(d).replace('.',',');   // decimal con coma, como espera Sheets en es-AR
+const COL_PARCHE=['Fecha','SKU','Modelo','Bastidor','Ancho parche (mm)','Alto parche (mm)','Parches por bandeja',
+  'Puntadas','Colores','Codigos de color','Hilo','Tela','Friselina','Abrojo','Maquina','Electricidad',
+  'Mano de obra','Gastos generales','Costo unitario','Costo bandeja','$ por puntada','Publico','Mayorista'];
+
+function filaParche(m,b){
+  const r=costear(m,b), g=t=>{const i=r.items.find(x=>x[0]===t); return i?i[1]:0;};
+  const tela=r.items[1]?r.items[1][1]:0;
+  return [HOY(), m.sku||'', m.nombre||'', `${num(m.bastW,0)}x${num(m.bastH,0)}`, num(m.parW,0), num(m.parH,0), r.n,
+    m.puntadas, m.colores||'', m.codigos||'',
+    n2(g('Hilo')), n2(tela), n2(g('Friselina')), n2(g('Abrojo')), n2(g('Máquina')), n2(g('Electricidad')),
+    n2(g('Mano de obra')), n2(g('Gastos generales')), n2(r.costo), n2(r.costo*r.n), n2(r.vp,4),
+    n2(r.pvp), n2(r.may)].join('\t');
+}
+function bloqueModelos(b){
+  return [COL_PARCHE.join('\t'), ...MODELOS.map(m=>filaParche(m,b))].join('\n');
+}
+function bloqueMateriales(b){
+  const f=HOY();
+  const filas=[
+    [b.nombreTela, `rollo ${n2(b.anchoTela,2)} x ${num(b.largoTela,0)} m`, n2(b.pRolloTela,2), n2(b.pTela,2)+' /m lineal'],
+    ['Friselina',  `rollo ${n2(b.anchoFris,2)} x ${num(b.largoFris,0)} m`, n2(b.pRolloFris,2), n2(b.pFris,2)+' /m lineal'],
+    ['Hilo',       `cono, rinde ${num(b.rendCono)} puntadas`, n2(b.pCono,2), n2(b.pCono/Math.max(1,b.rendCono),4)+' /puntada'],
+    ['Abrojo',     `rollo de ${num(b.anchoAbrojo,0)} cm`, n2(b.pAbrojo,2), n2(b.pAbrojo,2)+' /metro'],
+    ['Electricidad',`kWh con impuestos`, n2(b.pKwh,2), n2(b.kwBord,2)+' kW la bordadora'],
+    ['Maquina',    `amortizacion y mantenimiento`, n2(b.costoMaqMin,2), 'por minuto'],
+    ['Mano de obra',`taller`, n2(b.manoHora,2), `por hora, supervision ${num(b.superv,0)}%`],
+    ['Gastos generales',`sobre el costo directo`, n2(b.overhead), '%']
+  ];
+  return ['Fecha\tMaterial\tPresentacion\tPrecio sin IVA\tEquivale a',
+    ...filas.map(x=>[f,...x].join('\t'))].join('\n');
+}
+async function copiar(texto,btn,ok='Copiado'){
+  const t=btn.textContent;
+  try{ await navigator.clipboard.writeText(texto); btn.textContent=ok; }
+  catch(e){ btn.textContent='No se pudo copiar'; }
+  setTimeout(()=>btn.textContent=t,1800);
 }
 
 /* ---------------- eventos ---------------- */
@@ -601,6 +656,29 @@ $('modBorrar').addEventListener('click',()=>{
   MODELOS.splice(i,1); guardarModelos(MODELOS);
   $('modSel').value=''; calcular();
 });
+$('copiarFila').addEventListener('click',e=>{
+  const m=modeloActual();
+  copiar(filaParche(m,base()),e.target,'Fila copiada');
+});
+$('copiarTodo').addEventListener('click',e=>{
+  if(!MODELOS.length){ e.target.textContent='No hay modelos'; setTimeout(()=>e.target.textContent='Copiar todos los modelos',1800); return; }
+  copiar(bloqueModelos(base()),e.target,`${MODELOS.length} modelos copiados`);
+});
+$('copiarMat').addEventListener('click',e=>copiar(bloqueMateriales(base()),e.target,'Materiales copiados'));
+
+// descarga del archivo, solo si el visor la habilita
+(async()=>{
+  const dl = (window.claude && claude.use) ? await claude.use('downloads') : null;
+  if(!dl) return;
+  const btn=$('bajar'); btn.hidden=false;
+  btn.addEventListener('click',async()=>{
+    const b=base();
+    const data=bloqueModelos(b)+'\n\n'+bloqueMateriales(b);
+    try{ await dl.save({filename:`costos-parches-${HOY()}.tsv`, data}); }
+    catch(err){ btn.textContent='Cancelado'; setTimeout(()=>btn.textContent='Descargar .tsv',1800); }
+  });
+})();
+
 $('aplicar').addEventListener('click',()=>{
   const f=leer('ajuste'); if(!(f>0))return;
   ['pRolloTela','pRolloFris','pCono','pAbrojo','pKwh','costoMaqMin','manoHora'].forEach(k=>{
