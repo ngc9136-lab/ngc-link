@@ -144,24 +144,26 @@ tr.tot td{border-top:1.5px solid var(--line);border-bottom:0;padding-top:9px;fon
           <div class="grid">
             <div class="f"><label for="preBast">Bastidor</label>
               <select id="preBast">
-                <option value="36x24">N° 1 — 360 × 240 mm</option>
-                <option value="24x24">N° 12 — 240 × 240 mm</option>
-                <option value="24x20">M1 — 240 × 200 mm</option>
-                <option value="12x11">M2 — 120 × 110 mm</option>
-                <option value="5x5">M3 — 50 × 50 mm</option>
+                <option value="360x240">N° 1 — 360 × 240 mm</option>
+                <option value="240x240">N° 12 — 240 × 240 mm</option>
+                <option value="240x200">M1 — 240 × 200 mm</option>
+                <option value="120x110">M2 — 120 × 110 mm</option>
+                <option value="50x50">M3 — 50 × 50 mm</option>
                 <option value="custom">Medida propia</option>
               </select></div>
-            <div class="f"><label for="bastW">Ancho bastidor <span class="u">cm</span></label><input id="bastW" type="text" inputmode="decimal"></div>
-            <div class="f"><label for="bastH">Alto bastidor <span class="u">cm</span></label><input id="bastH" type="text" inputmode="decimal"></div>
-            <div class="f"><label for="parW">Ancho parche <span class="u">cm</span></label><input id="parW" type="text" inputmode="decimal"></div>
-            <div class="f"><label for="parH">Alto parche <span class="u">cm</span></label><input id="parH" type="text" inputmode="decimal"></div>
-            <div class="f"><label for="sep">Separación <span class="u">cm</span></label><input id="sep" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="bastW">Ancho bastidor <span class="u">mm</span></label><input id="bastW" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="bastH">Alto bastidor <span class="u">mm</span></label><input id="bastH" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="excedente">Excedente por lado <span class="u">mm</span></label><input id="excedente" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="parW">Ancho parche <span class="u">mm</span></label><input id="parW" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="parH">Alto parche <span class="u">mm</span></label><input id="parH" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="sep">Separación <span class="u">mm</span></label><input id="sep" type="text" inputmode="decimal"></div>
             <div class="f"><label for="porBast">Parches por bastidor</label><input id="porBast" type="text" inputmode="decimal"></div>
             <label class="chk" for="autoFit"><input type="checkbox" id="autoFit"> Calcular automático</label>
           </div>
           <div class="note">El área del bastidor define cuánta tela y friselina se consume. Si entra más de un parche por bastidor,
-            la tela y el tiempo de preparación se reparten entre todos. <b>Si bordás de a uno, elegí el bastidor más chico donde entre el diseño</b>:
-            un parche de 9 × 7 cm solo en el N° 1 gasta 6,5 veces más tela que en el M2.</div>
+            la tela y el tiempo de preparación se reparten entre todos. La pieza de tela y la de friselina se cortan
+            con un <b>excedente por lado</b> para poder agarrarlas al bastidor: con 3 mm, el N° 12 se lleva 246 × 246 mm.
+            <b>Si bordás de a uno, elegí el bastidor más chico donde entre el diseño.</b></div>
         </div>
       </section>
 
@@ -216,7 +218,7 @@ tr.tot td{border-top:1.5px solid var(--line);border-bottom:0;padding-top:9px;fon
             <div class="f"><label for="costoMaqMin">Máquina <span class="u">$/min</span></label><input id="costoMaqMin" type="text" inputmode="decimal"></div>
             <div class="f"><label for="manoHora">Mano de obra <span class="u">$/hora</span></label><input id="manoHora" type="text" inputmode="decimal"></div>
             <div class="f"><label for="superv">Supervisión bordado <span class="u">% del tiempo</span></label><input id="superv" type="text" inputmode="decimal"></div>
-            <div class="f"><label for="merma">Merma de tela <span class="u">%</span></label><input id="merma" type="text" inputmode="decimal"></div>
+            <div class="f"><label for="merma">Merma extra <span class="u">% fallas</span></label><input id="merma" type="text" inputmode="decimal"></div>
             <div class="f"><label for="overhead">Gastos generales <span class="u">%</span></label><input id="overhead" type="text" inputmode="decimal"></div>
             <div class="f"><label for="markup">Multiplicador de venta</label><input id="markup" type="text" inputmode="decimal"></div>
             <div class="f"><label for="mayor">Mayorista <span class="u">% del público</span></label><input id="mayor" type="text" inputmode="decimal"></div>
@@ -269,14 +271,14 @@ tr.tot td{border-top:1.5px solid var(--line);border-bottom:0;padding-top:9px;fon
 
 <script>
 const DEF={
-  bastW:36, bastH:24, parW:9, parH:7, sep:1, porBast:1, autoFit:false,
+  bastW:360, bastH:240, excedente:3, parW:90, parH:70, sep:10, porBast:1, autoFit:false,
   puntadas:30000, ppm:335, prep:10, tCorte:2, conAbrojo:true, tAbrojo:3, cantidad:20,
   pTela:4000, pFris:13333.33, pCono:5800, rendCono:500000, factorHilo:1,
   pAbrojo:1500, anchoAbrojo:5, pKwh:216.24, kwBord:0.75, kwTaller:0.3,
-  costoMaqMin:3.5, manoHora:8000, superv:20, merma:10, overhead:10, markup:3, mayor:75,
-  preBast:'36x24', preTela:'4000'
+  costoMaqMin:3.5, manoHora:8000, superv:20, merma:0, overhead:10, markup:3, mayor:75,
+  preBast:'360x240', preTela:'4000', u:'mm'
 };
-const NUM=['bastW','bastH','parW','parH','sep','porBast','puntadas','ppm','prep','tCorte','tAbrojo','cantidad',
+const NUM=['bastW','bastH','excedente','parW','parH','sep','porBast','puntadas','ppm','prep','tCorte','tAbrojo','cantidad',
   'pTela','pFris','pCono','rendCono','factorHilo','pAbrojo','anchoAbrojo','pKwh','kwBord','kwTaller',
   'costoMaqMin','manoHora','superv','merma','overhead','markup','mayor'];
 const CHK=['autoFit','conAbrojo'], SEL=['preBast','preTela'];
@@ -297,6 +299,10 @@ function leer(id){
 function cargar(){
   let s={};
   try{ s=JSON.parse(localStorage.getItem('ngc-parches')||'{}'); }catch(e){ s={}; }
+  if(!s.u){                                     // estado viejo: geometría en cm y merma a mano
+    ['bastW','bastH','parW','parH','sep'].forEach(k=>{ if(s[k]!==undefined) s[k]=s[k]*10; });
+    delete s.merma; delete s.excedente; delete s.preBast;
+  }
   const d={...DEF,...s};
   NUM.forEach(k=>$(k).value=String(d[k]).replace('.',','));
   CHK.forEach(k=>$(k).checked=!!d[k]);
@@ -311,6 +317,7 @@ function guardar(){
   NUM.forEach(k=>d[k]=leer(k));
   CHK.forEach(k=>d[k]=$(k).checked);
   SEL.forEach(k=>d[k]=$(k).value);
+  d.u='mm';
   try{ localStorage.setItem('ngc-parches',JSON.stringify(d)); }catch(e){}
 }
 
@@ -322,6 +329,8 @@ function encajan(BW,BH,pw,ph,s){   // 0 = el parche no entra en el bastidor
 
 function calcular(){
   const BW=leer('bastW'), BH=leer('bastH'), pw=leer('parW'), ph=leer('parH'), s=leer('sep');
+  const exc=leer('excedente');              // sobrante para agarrar la tela al bastidor: 3 cm por lado
+  const telaW=BW+2*exc, telaH=BH+2*exc;     // pieza de cordura y de friselina que hay que cortar, en mm
   const auto=$('autoFit').checked;
   $('porBast').readOnly=auto;
   const cabe=encajan(BW,BH,pw,ph,s);
@@ -329,8 +338,8 @@ function calcular(){
   if(auto) $('porBast').value=n;
   const hint=$('fitHint');
   hint.textContent=cabe===0
-    ? `⚠ el parche de ${num(pw,1)} × ${num(ph,1)} cm no entra en este bastidor`
-    : `bastidor ${num(BW*BH/10000,4)} m² · ${n} parche${n>1?'s':''} por puesta`;
+    ? `⚠ el parche de ${num(pw,0)} × ${num(ph,0)} mm no entra en este bastidor`
+    : `tela y friselina ${num(telaW,0)} × ${num(telaH,0)} mm = ${num(telaW*telaH/1e6,4)} m² · ${n} parche${n>1?'s':''} por puesta`;
   hint.style.color=cabe===0?'var(--warn)':'';
 
   const puntadas=leer('puntadas'), ppm=Math.max(1,leer('ppm'));
@@ -338,8 +347,8 @@ function calcular(){
   $('tMaq').value=num(tMaq,1);
   $('maqHint').textContent=`${num(tMaq*n,1)} min por bastidor`;
 
-  const areaBast=(BW*BH)/10000/n*(1+leer('merma')/100);   // m² de tela por parche
-  const areaPar=(pw*ph)/10000;                             // m² del parche terminado
+  const areaBast=(telaW*telaH)/1e6/n*(1+leer('merma')/100);     // m² de tela y friselina por parche
+  const areaPar=(pw*ph)/1e6;                                    // m² del parche terminado
   const abrojoOn=$('conAbrojo').checked;
   const anchoRollo=Math.max(0.01,leer('anchoAbrojo')/100);
   const tMan=leer('tCorte')+(abrojoOn?leer('tAbrojo'):0);
@@ -386,7 +395,7 @@ function calcular(){
   $('oTiempo').textContent=`${num(Math.floor(min/60))} h ${num(Math.round(min%60))} min`;
 
   window.__resumen=()=>[
-    `PARCHE · ${num(puntadas)} puntadas · ${num(pw,1)}×${num(ph,1)} cm${abrojoOn?' · con abrojo':''}`,
+    `PARCHE · ${num(puntadas)} puntadas · ${num(pw,0)}×${num(ph,0)} mm${abrojoOn?' · con abrojo':''}`,
     ...items.map(i=>`${i[0]}: ${ars(i[1])}`),
     `COSTO UNITARIO: ${ars(costo)}`,
     `Valor de la puntada: ${ars(vp,4)}`,
