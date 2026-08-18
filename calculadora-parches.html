@@ -162,7 +162,7 @@ tr.tot td{border-top:1.5px solid var(--line);border-bottom:0;padding-top:9px;fon
           </div>
           <div class="note">El área del bastidor define cuánta tela y friselina se consume. Si entra más de un parche por bastidor,
             la tela y el tiempo de preparación se reparten entre todos. La pieza de tela y la de friselina se cortan
-            con un <b>excedente de 60 mm por lado</b> para poder agarrarlas al bastidor. El N° 1 se lleva <b>480 × 360 mm</b> de cordura y otro tanto de friselina.
+            con un <b>excedente de 30 mm por lado</b> para poder agarrarlas al bastidor. El N° 1 se lleva <b>420 × 300 mm</b> de cordura y otro tanto de friselina.
             <b>Si bordás de a uno, elegí el bastidor más chico donde entre el diseño.</b></div>
         </div>
       </section>
@@ -271,12 +271,12 @@ tr.tot td{border-top:1.5px solid var(--line);border-bottom:0;padding-top:9px;fon
 
 <script>
 const DEF={
-  bastW:360, bastH:240, excedente:60, parW:90, parH:70, sep:10, porBast:1, autoFit:false,
+  bastW:360, bastH:240, excedente:30, parW:90, parH:70, sep:10, porBast:1, autoFit:false,
   puntadas:30000, ppm:335, prep:10, tCorte:2, conAbrojo:true, tAbrojo:3, cantidad:20,
   pTela:4000, pFris:13333.33, pCono:5800, rendCono:500000, factorHilo:1,
   pAbrojo:1500, anchoAbrojo:5, pKwh:216.24, kwBord:0.75, kwTaller:0.3,
   costoMaqMin:3.5, manoHora:8000, superv:20, merma:0, overhead:10, markup:3, mayor:75,
-  preBast:'360x240', preTela:'4000', u:'mm4'
+  preBast:'360x240', preTela:'4000', u:'mm5'
 };
 const NUM=['bastW','bastH','excedente','parW','parH','sep','porBast','puntadas','ppm','prep','tCorte','tAbrojo','cantidad',
   'pTela','pFris','pCono','rendCono','factorHilo','pAbrojo','anchoAbrojo','pKwh','kwBord','kwTaller',
@@ -303,7 +303,7 @@ function cargar(){
     ['bastW','bastH','parW','parH','sep'].forEach(k=>{ if(s[k]!==undefined) s[k]=s[k]*10; });
     delete s.merma; delete s.excedente; delete s.preBast;
   }
-  if(s.u!=='mm4') delete s.excedente;           // excedente definido: 60 mm por lado
+  if(s.u!=='mm5') delete s.excedente;           // excedente definido: 30 mm por lado
   const d={...DEF,...s};
   NUM.forEach(k=>$(k).value=String(d[k]).replace('.',','));
   CHK.forEach(k=>$(k).checked=!!d[k]);
@@ -318,7 +318,7 @@ function guardar(){
   NUM.forEach(k=>d[k]=leer(k));
   CHK.forEach(k=>d[k]=$(k).checked);
   SEL.forEach(k=>d[k]=$(k).value);
-  d.u='mm4';
+  d.u='mm5';
   try{ localStorage.setItem('ngc-parches',JSON.stringify(d)); }catch(e){}
 }
 
