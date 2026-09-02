@@ -1,0 +1,5 @@
+node_modules/
+tools/.cache/
+tools/salida/
+fotos-listas/
+banners/*@2x.png

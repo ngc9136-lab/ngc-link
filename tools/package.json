@@ -1,0 +1,25 @@
+{
+  "name": "ngc-tools",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Herramientas de auditoria y preparacion de imagenes para la tienda NGC Aeronautica",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "audit": "node audit-storefront.mjs",
+    "verify": "node verify-front.mjs",
+    "prep": "node prep-photos.mjs",
+    "test": "node test/audit.test.mjs && node test/verify.test.mjs && node test/prep.test.mjs"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0",
+    "image-size": "^1.1.1"
+  },
+  "devDependencies": {
+    "@fontsource/poppins": "^5.3.0",
+    "playwright": "^1.56.1",
+    "sharp": "^0.35.4"
+  }
+}
