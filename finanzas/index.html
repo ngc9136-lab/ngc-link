@@ -1369,7 +1369,7 @@ const FORMS = {
     titulo: 'gasto',
     campos: [
       { n: 'fecha', l: 'Fecha', t: 'date', req: true, def: () => hoy() },
-      { n: 'categoria', l: 'Categoría', t: 'select', o: ['Supermercado', 'Servicios', 'Alquiler y expensas', 'Transporte', 'Salud', 'Educación', 'Comidas afuera', 'Ropa', 'Hogar', 'Ocio', 'Suscripciones', 'Impuestos', 'Negocio', 'Otros'].map(x => [x, x]) },
+      { n: 'categoria', l: 'Categoría', t: 'select', o: ['Supermercado', 'Servicios', 'Alquiler y expensas', 'Transporte', 'Salud', 'Seguros', 'Educación', 'Comidas afuera', 'Ropa', 'Hogar', 'Ocio', 'Suscripciones', 'Impuestos', 'Tarjeta de crédito', 'Negocio', 'Otros'].map(x => [x, x]) },
       { n: 'descripcion', l: 'Descripción', t: 'text', req: true, max: 80, ph: 'Ej.: Compra semanal' },
       { n: 'monto', l: 'Monto', t: 'money', req: true, min: 0.01, half: true },
       { n: 'moneda', l: 'Moneda', t: 'select', o: opts({ ARS: 'Pesos', USD: 'Dólares' }), half: true },
