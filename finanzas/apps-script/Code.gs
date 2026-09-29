@@ -176,23 +176,35 @@ function leerCotizaciones_() {
   if (n < 1) return [];
   var rango = hoja.getRange(2, 1, n, 5);
   var formulas = rango.getFormulas();
-  // Si agregaste un ticker nuevo sin fórmula, se la ponemos automáticamente.
   var vals = rango.getValues();
+  // Pone (o corrige) la fórmula de precio en cada fila con ticker.
+  // Se usa GOOGLEFINANCE con un solo argumento para que funcione en cualquier
+  // configuración regional (en Argentina el separador de argumentos es ";").
   var cambio = false;
   for (var i = 0; i < n; i++) {
-    if (vals[i][1] && !formulas[i][2] && vals[i][2] === '') {
-      hoja.getRange(i + 2, 3).setFormula('=IFERROR(GOOGLEFINANCE(B' + (i + 2) + ',"price"),"")');
-      hoja.getRange(i + 2, 5).setFormula('=IFERROR(GOOGLEFINANCE(B' + (i + 2) + ',"tradetime"),"")');
+    var f = i + 2;
+    var esperada = formulaPrecio_(f);
+    var actual = String(formulas[i][2] || '').replace(/\s/g, '').toUpperCase();
+    var manual = !formulas[i][2] && typeof vals[i][2] === 'number' && vals[i][2] > 0; // precio escrito a mano
+    if (vals[i][1] && !manual && actual !== esperada.toUpperCase()) {
+      hoja.getRange(f, 3).setFormula(esperada);
+      if (formulas[i][4]) hoja.getRange(f, 5).setValue(''); // fórmula vieja de hora: se reemplaza por la hora de lectura
       cambio = true;
     }
   }
   if (cambio) { SpreadsheetApp.flush(); vals = rango.getValues(); }
   var tz = SpreadsheetApp.getActive().getSpreadsheetTimeZone();
+  var ahora = Utilities.formatDate(new Date(), tz, "yyyy-MM-dd'T'HH:mm:ssXXX");
   return vals.filter(function (v) { return v[0]; }).map(function (v) {
     var precio = typeof v[2] === 'number' && isFinite(v[2]) && v[2] > 0 ? v[2] : null;
-    var act = v[4] instanceof Date ? Utilities.formatDate(v[4], tz, "yyyy-MM-dd'T'HH:mm:ssXXX") : (v[4] ? String(v[4]) : '');
+    var act = v[4] instanceof Date ? Utilities.formatDate(v[4], tz, "yyyy-MM-dd'T'HH:mm:ssXXX") : (v[4] ? String(v[4]) : ahora);
     return { simbolo: String(v[0]).trim().toUpperCase(), ticker: String(v[1] || ''), precio: precio, moneda: String(v[3] || 'USD').toUpperCase(), actualizado: act };
   });
+}
+
+/** Fórmula de precio sin separadores de argumentos (sirve con coma o con punto y coma). */
+function formulaPrecio_(fila) {
+  return '=IFERROR(GOOGLEFINANCE(B' + fila + '))';
 }
 
 /* ======================= Hojas y formatos ======================= */
@@ -240,11 +252,9 @@ function asegurarCotizaciones_() {
   COTIZ_INICIALES.forEach(function (c, i) {
     var f = i + 2;
     hoja.getRange(f, 1, 1, 2).setValues([[c[0], c[1]]]);
-    hoja.getRange(f, 3).setFormula('=IFERROR(GOOGLEFINANCE(B' + f + ',"price"),"")');
+    hoja.getRange(f, 3).setFormula(formulaPrecio_(f));
     hoja.getRange(f, 4).setValue(c[2]);
-    hoja.getRange(f, 5).setFormula('=IFERROR(GOOGLEFINANCE(B' + f + ',"tradetime"),"")');
   });
-  hoja.getRange(2, 5, 50, 1).setNumberFormat('yyyy-mm-dd hh:mm');
   return hoja;
 }
 

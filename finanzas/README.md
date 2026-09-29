@@ -118,9 +118,9 @@ Se usa para la variación del patrimonio contra el mes anterior y para el gráfi
 |---|---|
 | simbolo | Símbolo tal como lo cargás en Inversiones, por ejemplo `VOO` |
 | ticker | Ticker de Google Finance, por ejemplo `NYSEARCA:VOO` |
-| precio | Fórmula `=IFERROR(GOOGLEFINANCE(B2,"price"),"")` |
+| precio | Fórmula `=IFERROR(GOOGLEFINANCE(B2))` (un solo argumento: funciona con coma o punto y coma). También podés escribir el precio a mano. |
 | moneda | Moneda del precio (`USD` o `ARS`) |
-| actualizado | Fórmula `=IFERROR(GOOGLEFINANCE(B2,"tradetime"),"")` |
+| actualizado | Opcional. Si está vacío, la app muestra la hora en que se leyó el precio. |
 
 Viene cargada con VOO, VT, SPY, SGOV, BIL, SCHD e IB01 (`LON:IB01`). Para agregar otro activo, sumá una fila con `simbolo`, `ticker` y `moneda`; el script completa las fórmulas solo. Para un CEDEAR cotizado en pesos, probá con un ticker de BCBA (por ejemplo `BCBA:SPY`) y moneda `ARS`. Si Google Finance no lo cubre, escribí el precio a mano en la columna `precio`.
 
