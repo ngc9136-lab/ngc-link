@@ -4,7 +4,7 @@
  *   la app guarda sus propios datos y los últimos valores en el dispositivo.
  * Cambiá VERSION cuando publiques una versión nueva para forzar la actualización.
  */
-const VERSION = 'finanzas-v3';
+const VERSION = 'finanzas-v4';
 const CHART_URL = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/maskable-512.png', './icons/apple-touch-icon.png'];
 
