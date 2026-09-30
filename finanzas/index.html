@@ -651,7 +651,7 @@ async function sincronizar({ silencioso = false } = {}) {
   try {
     // 1) Subir cambios pendientes en lotes
     while (S.queue.length) {
-      const lote = S.queue.slice(0, 50);
+      const lote = S.queue.slice(0, 25); // lotes chicos para no pasar el tiempo máximo de Apps Script
       const r = await llamarScript(null, { ops: lote });
       S.queue = S.queue.filter(q => !lote.includes(q));
       guardarDatos();
@@ -1614,9 +1614,47 @@ window.addEventListener('unhandledrejection', e => toast('Error inesperado: ' + 
 /* =====================================================================
    25. INICIO
    ===================================================================== */
-function iniciar() {
+/* ---------- Importación de historial desde un enlace ----------
+   Formato: index.html#importar=<JSON comprimido con gzip, en base64url>.
+   El contenido va después del "#", así que nunca se envía al servidor que aloja la app.
+   JSON: { Ingresos: {cols:[...], rows:[[...]]}, Gastos: {cols:[...], rows:[[...]]} } */
+async function importarDesdeEnlace() {
+  const m = location.hash.match(/^#importar=([A-Za-z0-9_-]+)$/);
+  if (!m) return;
+  history.replaceState(null, '', location.pathname + location.search); // saca los datos de la barra de direcciones
+  try {
+    if (!('DecompressionStream' in window)) throw new Error('Este navegador no puede leer el enlace. Abrilo con Chrome actualizado.');
+    const b64 = m[1].replace(/-/g, '+').replace(/_/g, '/');
+    const bytes = Uint8Array.from(atob(b64 + '==='.slice((b64.length + 3) % 4)), c => c.charCodeAt(0));
+    const txt = await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
+    const datos = JSON.parse(txt);
+    const hojas = Object.keys(datos).filter(h => HOJAS.includes(h) && Array.isArray(datos[h].rows));
+    if (!hojas.length) throw new Error('El enlace no tiene datos para importar.');
+    const resumen = hojas.map(h => `${datos[h].rows.length} ${h.toLowerCase()}`).join(' y ');
+    if (!confirm(`Se van a cargar ${resumen} del historial. Si ya estaban cargados, se actualizan sin duplicarse. ¿Continuar?`)) return;
+    const ahora = new Date().toISOString();
+    for (const h of hojas) {
+      const { cols, rows } = datos[h];
+      for (const r of rows) {
+        const row = normalizarFila(Object.fromEntries(cols.map((c, i) => [c, r[i] ?? ''])));
+        if (!row.id) continue;
+        row.actualizado = ahora;
+        upsertLocal(h, row);
+        encolar({ op: 'upsert', hoja: h, row });
+      }
+    }
+    guardarDatos();
+    toast(`Historial cargado: ${resumen}. ${S.cfg.scriptUrl ? 'Se está guardando en tu planilla; puede tardar unos minutos.' : 'Configurá la URL del script para guardarlo en tu planilla.'}`, 'ok', 9000);
+  } catch (e) {
+    toast('No se pudo importar el historial: ' + e.message, 'bad');
+  }
+}
+
+async function iniciar() {
   irA('resumen');
   setSync(S.cfg.scriptUrl ? (navigator.onLine ? 'idle' : 'offline') : 'local');
+  await importarDesdeEnlace();
+  renderTodo();
   sincronizar({ silencioso: true });
   actualizarCotizaciones();
   setInterval(() => actualizarCotizaciones(), 5 * 60 * 1000); // cotizaciones cada 5 minutos
