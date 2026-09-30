@@ -154,7 +154,7 @@ section.view{display:none} section.view.on{display:block}
 .quotes{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
 .q{background:var(--card2);border-radius:12px;padding:8px 10px;min-width:0}
 .q .qn{font-size:12.5px;color:var(--muted);font-weight:700}
-.q .qv{font-size:18px;font-weight:800;overflow-wrap:anywhere}
+.q .qv{font-size:clamp(15px,4.6vw,18px);font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .q .qt{font-size:11.5px;color:var(--muted)}
 .stale{color:var(--warn-txt);font-weight:800}
 
@@ -326,6 +326,10 @@ const BALDES = [
   { key: 'inversion', nombre: 'Inversión largo plazo (cripto)', ico: '📈' },
 ];
 const CRIPTO_IDS = { BTC: 'bitcoin', ETH: 'ethereum', USDT: 'tether', USDC: 'usd-coin', PAXG: 'pax-gold' };
+/** Otras cripto conocidas (símbolo → id de CoinGecko). Se consultan solo si las tenés cargadas. */
+const CRIPTO_EXTRA = { XRP: 'ripple', NEXO: 'nexo', XLM: 'stellar', SOL: 'solana', ADA: 'cardano', DOGE: 'dogecoin', DOT: 'polkadot', LTC: 'litecoin', LINK: 'chainlink', AVAX: 'avalanche-2', TRX: 'tron', BNB: 'binancecoin', DAI: 'dai', MATIC: 'matic-network', POL: 'polygon-ecosystem-token', TON: 'the-open-network' };
+/** Dólares digitales que valen siempre US$ 1 (por ejemplo, USDx de Nexo). */
+const ESTABLES_USD = ['USDX'];
 
 const DEFAULT_CFG = {
   scriptUrl: '', token: '', dolarTipo: 'mep', vista: 'ARS', presupuesto: 0, disponibleTarjetas: 0, mesesObjetivo: 12,
@@ -346,6 +350,7 @@ const S = {
   data: Object.assign(Object.fromEntries(HOJAS.map(h => [h, []])), LS.get('data', {})),
   queue: LS.get('queue', []),
   quotes: mezclar({ dolar: {}, cripto: {}, mercado: {}, meta: {} }, LS.get('quotes', {})),
+  hist: LS.get('hist', {}), // precios diarios por activo (US$)
   lastSync: LS.get('lastSync', null),
   sync: { estado: 'idle', error: '' },
   ui: { tab: 'resumen', periodo: 'mes', mesIng: mesActual(), mesGas: mesActual(), vistaGastos: 'todos', filtroVenc: 'pendientes' },
@@ -518,6 +523,7 @@ function precioActivo(inv) {
   if (esSaldo(inv)) return inv.monedaCompra === 'USD' ? { usd: 1, ars: R, fuente: 'saldo cargado', ts: inv.actualizado } : { ars: 1, usd: R ? 1 / R : 0, fuente: 'saldo cargado', ts: inv.actualizado };
   if (sym === 'ARS') return { ars: 1, usd: R ? 1 / R : 0, fuente: 'Pesos' };
   if (inv.tipo === 'efectivo' || sym === 'USD') return { usd: 1, ars: R, fuente: 'Dólares' };
+  if (ESTABLES_USD.includes(sym)) return { usd: 1, ars: R, fuente: 'dólar digital (US$ 1)' };
   const c = S.quotes.cripto[sym];
   if (c && c.usd > 0) return { usd: c.usd, ars: c.usd * R, ts: c.ts, stale: c.stale, fuente: 'CoinGecko' };
   const m = S.quotes.mercado[sym];
@@ -670,6 +676,7 @@ async function sincronizar({ silencioso = false } = {}) {
     for (const h of HOJAS) S.data[h] = (r.data?.[h] || []).map(normalizarFila);
     for (const op of S.queue) op.op === 'upsert' ? upsertLocal(op.hoja, op.row) : borrarLocal(op.hoja, op.id);
     if (r.cotizaciones) aplicarMercado(r.cotizaciones);
+    S.quotes.meta.scriptVersion = r.version || 1;
     S.lastSync = new Date().toISOString(); LS.set('lastSync', S.lastSync); LS.set('quotes', S.quotes);
     guardarDatos();
     setSync(S.queue.length ? 'pending' : 'ok');
@@ -717,7 +724,7 @@ async function cargarCripto() {
   const q = S.quotes;
   const ids = { ...CRIPTO_IDS };
   // Criptos cargadas que no estén en la lista fija: se busca su id de CoinGecko por el nombre en minúsculas
-  for (const inv of S.data.Inversiones) { const s = String(inv.activo || '').toUpperCase(); if (inv.tipo === 'cripto' && s && !ids[s]) ids[s] = s.toLowerCase(); }
+  for (const inv of S.data.Inversiones) { const s = String(inv.activo || '').toUpperCase(); if (inv.tipo === 'cripto' && s && !ids[s] && !ESTABLES_USD.includes(s)) ids[s] = CRIPTO_EXTRA[s] || s.toLowerCase(); }
   try {
     const url = 'https://api.coingecko.com/api/v3/simple/price?vs_currencies=usd&include_last_updated_at=true&ids=' + encodeURIComponent([...new Set(Object.values(ids))].join(','));
     const j = await fetchJSON(url);
@@ -750,7 +757,7 @@ function aplicarMercado(lista) {
 }
 async function cargarMercado() {
   if (!S.cfg.scriptUrl) return;
-  try { const r = await llamarScript({ action: 'cotizaciones' }); aplicarMercado(r.cotizaciones); }
+  try { const r = await llamarScript({ action: 'cotizaciones' }); S.quotes.meta.scriptVersion = r.version || 1; aplicarMercado(r.cotizaciones); }
   catch (e) {
     for (const k in S.quotes.mercado) S.quotes.mercado[k].stale = true;
     S.quotes.meta.mercado = { ok: false, at: new Date().toISOString(), error: e.message };
@@ -768,7 +775,21 @@ async function actualizarCotizaciones({ manual = false } = {}) {
   const fallas = res.filter(r => r.status === 'rejected').map(r => r.reason.message);
   if (fallas.length && manual) toast('Algunas cotizaciones no se actualizaron y se muestran las últimas guardadas: ' + fallas.join(' · '), 'warn');
   fotoPatrimonio();
+  registrarPreciosDelDia();
   renderTodo();
+}
+/** Guarda el precio del día (en US$) de cada activo que tenés, para armar gráficos de precio en el tiempo. */
+function registrarPreciosDelDia() {
+  const d = hoy(); let cambio = false;
+  for (const inv of S.data.Inversiones) {
+    if (esSaldo(inv) || inv.tipo === 'efectivo') continue;
+    const sym = String(inv.activo || '').toUpperCase(); const p = precioActivo(inv);
+    if (!sym || p.sinCotiz || !(p.usd > 0)) continue;
+    const h = S.hist[sym] || (S.hist[sym] = {});
+    if (h[d] !== p.usd) { h[d] = p.usd; cambio = true; }
+    const dias = Object.keys(h).sort(); if (dias.length > 400) dias.slice(0, dias.length - 400).forEach(k => delete h[k]);
+  }
+  if (cambio) LS.set('hist', S.hist);
 }
 /** Guarda una "foto" diaria del patrimonio en la hoja Historial (como máximo cada 3 horas). */
 function fotoPatrimonio() {
@@ -1221,14 +1242,19 @@ function renderInversiones() {
   const nvInv = ten.length ? Sem.inversion(tot.plPct) : 'na';
   const q = S.quotes;
   const cotiz = [
-    ...Object.keys(CRIPTO_IDS).map(s => quoteBox(s, q.cripto[s] ? fmtMon(q.cripto[s].usd, 'USD', q.cripto[s].usd < 10 ? 4 : 2) : '—', q.cripto[s]?.ts, q.cripto[s]?.stale)),
-    ...Object.entries(q.mercado).map(([s, m]) => quoteBox(s, m.precio ? fmtMon(m.precio, m.moneda) : '—', m.ts, m.stale)),
+    ...[...new Set([...Object.keys(CRIPTO_IDS), ...ten.filter(t => t.inv.tipo === 'cripto').map(t => String(t.inv.activo).toUpperCase())])].filter(s => q.cripto[s]).map(s => quoteBox(s, q.cripto[s] ? fmtMon(q.cripto[s].usd, 'USD', q.cripto[s].usd >= 1000 ? 0 : q.cripto[s].usd < 10 ? 4 : 2) : '—', q.cripto[s]?.ts, q.cripto[s]?.stale)),
+    ...Object.entries(q.mercado).map(([s, m]) => quoteBox(s, m.precio ? fmtMon(m.precio, m.moneda, m.moneda === 'USD' && m.precio >= 1000 ? 0 : undefined) : '—', m.ts, m.stale)),
   ];
   const dd = dineroDisponible();
   const fcis = ten.filter(t => t.inv.tipo === 'fci');
   const mercado = ten.filter(t => !esSaldo(t.inv) && t.inv.tipo !== 'efectivo');
   const monSaldo = i => (i.monedaCompra === 'USD' || String(i.activo).toUpperCase() === 'USD' ? 'USD' : 'ARS');
+  const sinCotizAcciones = mercado.filter(t => t.p.sinCotiz && ['accion', 'etf', 'cedear'].includes(t.inv.tipo));
+  const scriptViejo = S.cfg.scriptUrl && (S.quotes.meta.scriptVersion || 1) < 2;
+  const simbolosGraf = [...new Set(mercado.map(t => String(t.inv.activo).toUpperCase()))].filter(x => !ESTABLES_USD.includes(x));
+  if (!simbolosGraf.includes(S.ui.histSym)) S.ui.histSym = simbolosGraf[0] || '';
   $('#v-inversiones').innerHTML = `
+    ${scriptViejo || sinCotizAcciones.length ? `<div class="banner warn"><span class="bi">!</span><div>${sinCotizAcciones.length ? `${sinCotizAcciones.length} acción(es) o ETF todavía sin cotización (${sinCotizAcciones.slice(0, 5).map(t => esc(t.inv.activo)).join(', ')}): se muestran con el precio de compra.` : ''} ${scriptViejo ? '<b>Actualizá el script de Google</b> (una sola vez) para que las acciones se coticen solas.' : 'Puede tardar unos minutos la primera vez.'}</div></div>` : ''}
     <div class="btns" style="margin-bottom:12px">
       <button class="btn pri" data-nueva-inv="accion">+ Acción / cripto</button>
       <button class="btn" data-nueva-inv="liquidez">+ Dinero disponible</button>
@@ -1251,8 +1277,46 @@ function renderInversiones() {
       <div class="small muted" style="margin-bottom:6px">Bitcoin: ${fmtPct(tot.btcPct)} del patrimonio (banda ${U().btcMin}–${U().btcMax} %)</div>
       <div class="list">${activos.map(a => { const plA = vistaUSD() ? a.valorUSD - a.costoUSD : a.valorARS - a.costoARS; const base = vistaUSD() ? a.costoUSD : a.costoARS; const pctA = base ? plA / base * 100 : 0; return `<div class="item"><div class="main"><div class="t">${esc(a.k)}</div>${barra(a.peso, 'ok')}<div class="s">${fmtPct(a.peso)} del patrimonio</div></div><div class="r"><div class="a num">${fmtV(a.valorARS)}</div><div class="s num ${signo(plA)}">${mas(pctA)}${fmtPct(pctA)}</div>${a.k === 'BTC' ? pill(Sem.btc(tot.btcPct)) : pill(Sem.inversion(pctA))}</div></div>`; }).join('') || empty('Sin tenencias.')}</div></div>
     <div class="card"><h2>Acciones, CEDEAR, ETF y cripto</h2><div class="list">${mercado.sort((a, b) => b.valorARS - a.valorARS).map(t => { const pct = vistaUSD() ? t.plPctUSD : t.plPctARS; return `<button class="item" data-edit="Inversiones" data-id="${esc(t.inv.id)}"><div class="main"><div class="t">${esc(t.inv.activo)} <span class="tag">${esc(t.inv.plataforma)}</span></div><div class="s">${fmtNum(+t.inv.cantidad, +t.inv.cantidad % 1 ? 6 : 0)} u. · compra ${fmtMon(+t.inv.precioCompra, t.inv.monedaCompra)} · ${t.p.sinCotiz ? '<span class="stale">sin cotización</span>' : `${t.p.fuente}${t.p.stale ? ' <span class="stale">⚠ desactualizado</span>' : ''}`}</div><div class="s num">G/P: <span class="${signo(t.plARS)}">${fmtMon(t.plARS, 'ARS')}</span> · <span class="${signo(t.plUSD)}">${fmtMon(t.plUSD, 'USD')}</span></div></div><div class="r"><div class="a num">${fmtV(t.valorARS)}</div><div class="s num ${signo(pct)}">${mas(pct)}${fmtPct(pct)}</div>${pill(Sem.inversion(pct))}</div></button>`; }).join('') || empty('Cargá tus acciones con "+ Acción / cripto".')}</div></div>
+    ${simbolosGraf.length ? `<div class="card"><h2>Precio en el tiempo<span class="sp"></span><span id="hist-pill"></span></h2>
+      <div class="field"><label for="hist-sym">Activo</label><select id="hist-sym">${simbolosGraf.map(x => `<option ${x === S.ui.histSym ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></div>
+      <div class="chart"><canvas id="c-hist" role="img" aria-label="Precio del activo en el tiempo"></canvas></div><div class="hint" id="hist-nota">Tocá el gráfico para ver el valor exacto.</div></div>` : ''}
     <div class="card"><h2>Cotizaciones<span class="sp"></span><span class="small muted">auto cada 5 min</span></h2><div class="quotes">${cotiz.join('')}</div>
       <div class="hint">Cripto: CoinGecko. Acciones, ETF y CEDEAR: hoja Cotizaciones (GOOGLEFINANCE). ${!S.cfg.scriptUrl ? 'Configurá el script para ver acciones y ETF.' : ''}</div></div>`;
+  if (S.ui.histSym) dibujarHistorial(S.ui.histSym);
+}
+
+/** Gráfico de precio de un activo: cripto con 30 días de CoinGecko; el resto con el historial que va guardando la app. */
+const cacheHist = {};
+async function dibujarHistorial(sym) {
+  const inv = S.data.Inversiones.find(i => String(i.activo).toUpperCase() === sym);
+  let puntos = Object.entries(S.hist[sym] || {}).sort().map(([d, v]) => ({ d, v }));
+  let fuente = 'historial guardado por la app';
+  const id = CRIPTO_IDS[sym] || CRIPTO_EXTRA[sym] || (inv?.tipo === 'cripto' ? sym.toLowerCase() : null);
+  if (id) {
+    try {
+      if (!cacheHist[sym] || Date.now() - cacheHist[sym].at > 30 * 60e3) {
+        const j = await fetchJSON(`https://api.coingecko.com/api/v3/coins/${encodeURIComponent(id)}/market_chart?vs_currency=usd&days=30&interval=daily`);
+        cacheHist[sym] = { at: Date.now(), puntos: (j.prices || []).map(([t, v]) => ({ d: isoDate(new Date(t)), v })) };
+      }
+      puntos = cacheHist[sym].puntos; fuente = 'CoinGecko, últimos 30 días';
+    } catch (e) { fuente = 'historial guardado por la app (CoinGecko no respondió)'; }
+  } else {
+    puntos = puntos.filter(p => p.d >= addDays(hoy(), -30));
+  }
+  if (S.ui.tab !== 'inversiones' || S.ui.histSym !== sym || !document.getElementById('c-hist')) return; // cambió la pantalla mientras cargaba
+  const nota = $('#hist-nota');
+  if (puntos.length < 2) {
+    if (charts['c-hist']) { charts['c-hist'].destroy(); delete charts['c-hist']; }
+    nota.textContent = 'Todavía no hay historial de este activo: la app guarda el precio de cada día, así que el gráfico se va armando solo.';
+    $('#hist-pill').innerHTML = ''; return;
+  }
+  const vals = puntos.map(p => (vistaUSD() || !dolar() ? p.v : p.v * dolar()));
+  const pct = (vals[vals.length - 1] - vals[0]) / vals[0] * 100;
+  $('#hist-pill').innerHTML = `<span class="small num ${signo(pct)}" style="margin-right:6px">${mas(pct)}${fmtPct(pct)}</span>${pill(Sem.inversion(pct))}`;
+  const mon = vistaUSD() || !dolar() ? 'USD' : 'ARS';
+  crearChart('c-hist', chartBase('line', { labels: puntos.map(p => fmtDM(p.d)), datasets: [{ label: sym, data: vals, borderColor: pct >= 0 ? PALETA[0] : COLOR_NIVEL.bad, backgroundColor: 'rgba(57,135,229,.12)', fill: true, borderWidth: 2, tension: .2, pointRadius: 0, pointHitRadius: 10 }] },
+    { plugins: { legend: { display: false }, tooltip: { ...chartBase().options.plugins.tooltip, callbacks: { label: c => ' ' + fmtMon(c.parsed.y, mon, c.parsed.y < 10 ? 4 : 2) } } }, scales: { ...chartBase().options.scales, y: { ...chartBase().options.scales.y, beginAtZero: false, ticks: { ...chartBase().options.scales.y.ticks, callback: v => fmtNum(v, v < 10 ? 2 : 0) } } } }));
+  nota.textContent = `Precio en ${mon === 'USD' ? 'dólares' : 'pesos'} · fuente: ${fuente}. Tocá el gráfico para ver el valor exacto.`;
 }
 
 /* =====================================================================
@@ -1666,6 +1730,7 @@ document.addEventListener('submit', e => {
 });
 document.addEventListener('change', e => {
   const t = e.target;
+  if (t.id === 'hist-sym') { S.ui.histSym = t.value; dibujarHistorial(t.value); return; }
   if (t.dataset.asignar !== undefined && t.value) { const i = S.data.Ingresos.find(x => x.id === t.dataset.asignar); if (i) { guardarFila('Ingresos', { ...i, balde: t.value }); toast('Ingreso asignado ✓', 'ok', 2000); } return; }
   if (formActual && t.closest('#form-fila')) {
     const campo = t.name;
