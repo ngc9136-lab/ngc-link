@@ -508,9 +508,14 @@ function ahorroMensualPromedio(mov = movimientos()) {
   for (let k = 1; k <= 3; k++) { const ym = addMonths(cur, -k); t += sum(mov.ingresos.filter(i => i.fecha.startsWith(ym)), i => i.ars) - sum(mov.gastos.filter(g => g.personal && g.fecha.startsWith(ym)), g => g.ars); }
   return t / 3;
 }
+/** FCI y dinero disponible: se valúan por el saldo que carga el usuario (sin cotización de mercado).
+ *  En la hoja: cantidad = saldo actual; precioCompra = monto invertido (solo FCI); monedaCompra = moneda. */
+const esSaldo = inv => inv.tipo === 'fci' || inv.tipo === 'liquidez';
+const esMercado = v => !['fci', 'liquidez'].includes(v.tipo);
 /** Precio unitario actual de un activo en USD y ARS, con su fuente y frescura. */
 function precioActivo(inv) {
   const sym = String(inv.activo || '').toUpperCase().trim(); const R = dolar();
+  if (esSaldo(inv)) return inv.monedaCompra === 'USD' ? { usd: 1, ars: R, fuente: 'saldo cargado', ts: inv.actualizado } : { ars: 1, usd: R ? 1 / R : 0, fuente: 'saldo cargado', ts: inv.actualizado };
   if (sym === 'ARS') return { ars: 1, usd: R ? 1 / R : 0, fuente: 'Pesos' };
   if (inv.tipo === 'efectivo' || sym === 'USD') return { usd: 1, ars: R, fuente: 'Dólares' };
   const c = S.quotes.cripto[sym];
@@ -530,7 +535,10 @@ function valuarTenencias() {
     const q = +inv.cantidad || 0, pc = +inv.precioCompra || 0, tc = +inv.tcCompra || 0, p = precioActivo(inv);
     const valorUSD = q * p.usd, valorARS = q * p.ars;
     let costoUSD, costoARS;
-    if (inv.monedaCompra === 'ARS') { costoARS = q * pc; costoUSD = tc ? costoARS / tc : R ? costoARS / R : 0; }
+    if (esSaldo(inv)) { // FCI: costo = monto invertido (total); cuenta: sin ganancia
+      const inv0 = inv.tipo === 'fci' && pc > 0 ? pc : q;
+      if (inv.monedaCompra === 'USD') { costoUSD = inv0; costoARS = inv0 * (tc || R); } else { costoARS = inv0; costoUSD = R ? inv0 / R : 0; }
+    } else if (inv.monedaCompra === 'ARS') { costoARS = q * pc; costoUSD = tc ? costoARS / tc : R ? costoARS / R : 0; }
     else { costoUSD = q * pc; costoARS = costoUSD * (tc || R); }
     const plARS = valorARS - costoARS, plUSD = valorUSD - costoUSD;
     return { inv, p, valorUSD, valorARS, costoUSD, costoARS, plARS, plUSD, plPctARS: costoARS ? plARS / costoARS * 100 : 0, plPctUSD: costoUSD ? plUSD / costoUSD * 100 : 0 };
@@ -867,11 +875,17 @@ function bannersAlerta() {
   if (tj.supera) h += `<div class="banner bad" role="alert"><span class="bi">💳</span><div><b>Tarjetas:</b> tenés que pagar ${fmtV(tj.total)} en los próximos 30 días y tenés disponible ${fmtV(tj.disponible)}. Faltan ${fmtV(tj.total - tj.disponible)}.</div></div>`;
   return h;
 }
+/** Dinero disponible: cuentas y efectivo cargados en Inversiones como "Dinero disponible". */
+function dineroDisponible() {
+  const items = S.data.Inversiones.filter(i => i.tipo === 'liquidez' || i.tipo === 'efectivo');
+  const ars = sum(items, i => (i.tipo === 'efectivo' && String(i.activo).toUpperCase() === 'USD') || i.monedaCompra === 'USD' ? toARS(i.cantidad, 'USD') : +i.cantidad || 0);
+  return { items, ars };
+}
 /** Total de resúmenes de tarjeta pendientes con vencimiento en los próximos 30 días contra lo disponible. */
 function alertaTarjetas() {
   const lim = addDays(hoy(), 30);
   const total = sum(vencimientosTodos().filter(v => v.origen === 'tarjeta' && v.estado !== 'pagado' && v.fecha <= lim), v => toARS(v.monto, v.moneda));
-  const disponible = +S.cfg.disponibleTarjetas || 0;
+  const disponible = +S.cfg.disponibleTarjetas || dineroDisponible().ars;
   return { total, disponible, supera: disponible > 0 && total > disponible };
 }
 
@@ -921,6 +935,8 @@ function renderResumen() {
     <div class="seg" role="group" aria-label="Período">${[['hoy', 'Hoy'], ['semana', '7 días'], ['mes', 'Mes'], ['tres', '3 meses'], ['anio', 'Año']].map(([v, t]) => `<button data-periodo="${v}" aria-pressed="${S.ui.periodo === v}">${t}</button>`).join('')}</div>
     <div class="kpis" id="kpis"><div class="kpage">${k.slice(0, 4).join('')}</div><div class="kpage">${k.slice(4).join('')}</div></div>
     <div class="dots" aria-hidden="true"><span class="on"></span><span></span></div>
+    ${(() => { const dd = dineroDisponible(); return `<div class="card"><h2>Dinero disponible<span class="sp"></span><button class="btn sm" data-tab="inversiones">Ver y editar</button></h2>
+      <div class="big num">${fmtV(dd.ars)}</div><div class="small muted">${dd.items.length ? dd.items.map(i => `${esc(i.activo)}: ${fmtMon(+i.cantidad, i.monedaCompra === 'USD' || String(i.activo).toUpperCase() === 'USD' ? 'USD' : 'ARS')}`).join(' · ') : 'Todavía no cargaste cuentas ni efectivo.'}</div></div>`; })()}
     <div class="card"><h2>Dólar <span class="sp"></span><span class="small muted">convierte con ${DOLARES[S.cfg.dolarTipo]}</span></h2>
       <div class="quotes">${Object.entries(DOLARES).map(([kk, n]) => quoteBox(n, d[kk] ? fmtMon(d[kk].venta, 'ARS', 2) : '—', d[kk]?.ts, d[kk]?.stale)).join('')}</div></div>
     ${chartCard('c-diario', 'Gasto diario y acumulado vs. presupuesto', Sem.gasto(gasPct), 'tall')}
@@ -1208,8 +1224,21 @@ function renderInversiones() {
     ...Object.keys(CRIPTO_IDS).map(s => quoteBox(s, q.cripto[s] ? fmtMon(q.cripto[s].usd, 'USD', q.cripto[s].usd < 10 ? 4 : 2) : '—', q.cripto[s]?.ts, q.cripto[s]?.stale)),
     ...Object.entries(q.mercado).map(([s, m]) => quoteBox(s, m.precio ? fmtMon(m.precio, m.moneda) : '—', m.ts, m.stale)),
   ];
+  const dd = dineroDisponible();
+  const fcis = ten.filter(t => t.inv.tipo === 'fci');
+  const mercado = ten.filter(t => !esSaldo(t.inv) && t.inv.tipo !== 'efectivo');
+  const monSaldo = i => (i.monedaCompra === 'USD' || String(i.activo).toUpperCase() === 'USD' ? 'USD' : 'ARS');
   $('#v-inversiones').innerHTML = `
-    <div class="card"><h2>Valor actual<span class="sp"></span>${pill(nvInv)}</h2>
+    <div class="btns" style="margin-bottom:12px">
+      <button class="btn pri" data-nueva-inv="accion">+ Acción / cripto</button>
+      <button class="btn" data-nueva-inv="liquidez">+ Dinero disponible</button>
+      <button class="btn" data-nueva-inv="fci">+ FCI</button>
+    </div>
+    <div class="card"><h2>Dinero disponible<span class="sp"></span><span class="mid num">${fmtV(dd.ars)}</span></h2>
+      <div class="list">${dd.items.map(i => `<button class="item" data-edit="Inversiones" data-id="${esc(i.id)}"><div class="main"><div class="t">${esc(i.activo)} <span class="tag">${esc(i.plataforma)}</span></div><div class="s">Actualizado ${fmtHora(i.actualizado)} · tocá para cambiar el saldo</div></div><div class="r"><div class="a num">${fmtMon(+i.cantidad, monSaldo(i))}</div></div></button>`).join('') || empty('Cargá cuánto tenés en cada cuenta y en efectivo con "+ Dinero disponible".')}</div></div>
+    <div class="card"><h2>FCI (fondos comunes)<span class="sp"></span><span class="mid num">${fmtV(sum(fcis, t => t.valorARS))}</span></h2>
+      <div class="list">${fcis.map(t => { const pct = t.plPctARS; return `<button class="item" data-edit="Inversiones" data-id="${esc(t.inv.id)}"><div class="main"><div class="t">${esc(t.inv.activo)} <span class="tag">${esc(t.inv.plataforma)}</span></div><div class="s">Pusiste ${fmtMon(+t.inv.precioCompra, t.inv.monedaCompra)} · actualizado ${fmtHora(t.inv.actualizado)}</div></div><div class="r"><div class="a num">${fmtMon(+t.inv.cantidad, t.inv.monedaCompra)}</div><div class="s num ${signo(pct)}">${mas(pct)}${fmtPct(pct)}</div>${pill(Sem.inversion(pct))}</div></button>`; }).join('') || empty('Cargá tus fondos comunes con "+ FCI".')}</div></div>
+    <div class="card"><h2>Valor total (todo junto)<span class="sp"></span>${pill(nvInv)}</h2>
       <div class="big num">${fmtMon(tot.valorARS, 'ARS')}</div><div class="mid num txt2">${fmtMon(tot.valorUSD, 'USD')}</div>
       <div class="row2" style="margin-top:10px">
         <div class="stat"><div class="l">Ganancia en $</div><div class="v num ${signo(tot.plARS)}">${fmtMon(tot.plARS, 'ARS')}</div></div>
@@ -1221,7 +1250,7 @@ function renderInversiones() {
     <div class="card"><h2>Por activo<span class="sp"></span>${activos.length ? pill(Sem.btc(tot.btcPct), 'Banda de bitcoin') : ''}</h2>
       <div class="small muted" style="margin-bottom:6px">Bitcoin: ${fmtPct(tot.btcPct)} del patrimonio (banda ${U().btcMin}–${U().btcMax} %)</div>
       <div class="list">${activos.map(a => { const plA = vistaUSD() ? a.valorUSD - a.costoUSD : a.valorARS - a.costoARS; const base = vistaUSD() ? a.costoUSD : a.costoARS; const pctA = base ? plA / base * 100 : 0; return `<div class="item"><div class="main"><div class="t">${esc(a.k)}</div>${barra(a.peso, 'ok')}<div class="s">${fmtPct(a.peso)} del patrimonio</div></div><div class="r"><div class="a num">${fmtV(a.valorARS)}</div><div class="s num ${signo(plA)}">${mas(pctA)}${fmtPct(pctA)}</div>${a.k === 'BTC' ? pill(Sem.btc(tot.btcPct)) : pill(Sem.inversion(pctA))}</div></div>`; }).join('') || empty('Sin tenencias.')}</div></div>
-    <div class="card"><h2>Tenencias</h2><div class="list">${ten.sort((a, b) => b.valorARS - a.valorARS).map(t => { const pct = vistaUSD() ? t.plPctUSD : t.plPctARS; return `<button class="item" data-edit="Inversiones" data-id="${esc(t.inv.id)}"><div class="main"><div class="t">${esc(t.inv.activo)} <span class="tag">${esc(t.inv.plataforma)}</span></div><div class="s">${fmtNum(+t.inv.cantidad, +t.inv.cantidad % 1 ? 6 : 0)} u. · compra ${fmtMon(+t.inv.precioCompra, t.inv.monedaCompra)} · ${t.p.sinCotiz ? '<span class="stale">sin cotización</span>' : `${t.p.fuente}${t.p.stale ? ' <span class="stale">⚠ desactualizado</span>' : ''}`}</div><div class="s num">G/P: <span class="${signo(t.plARS)}">${fmtMon(t.plARS, 'ARS')}</span> · <span class="${signo(t.plUSD)}">${fmtMon(t.plUSD, 'USD')}</span></div></div><div class="r"><div class="a num">${fmtV(t.valorARS)}</div><div class="s num ${signo(pct)}">${mas(pct)}${fmtPct(pct)}</div>${pill(Sem.inversion(pct))}</div></button>`; }).join('') || empty('Tocá + para cargar tu primera tenencia.')}</div></div>
+    <div class="card"><h2>Acciones, CEDEAR, ETF y cripto</h2><div class="list">${mercado.sort((a, b) => b.valorARS - a.valorARS).map(t => { const pct = vistaUSD() ? t.plPctUSD : t.plPctARS; return `<button class="item" data-edit="Inversiones" data-id="${esc(t.inv.id)}"><div class="main"><div class="t">${esc(t.inv.activo)} <span class="tag">${esc(t.inv.plataforma)}</span></div><div class="s">${fmtNum(+t.inv.cantidad, +t.inv.cantidad % 1 ? 6 : 0)} u. · compra ${fmtMon(+t.inv.precioCompra, t.inv.monedaCompra)} · ${t.p.sinCotiz ? '<span class="stale">sin cotización</span>' : `${t.p.fuente}${t.p.stale ? ' <span class="stale">⚠ desactualizado</span>' : ''}`}</div><div class="s num">G/P: <span class="${signo(t.plARS)}">${fmtMon(t.plARS, 'ARS')}</span> · <span class="${signo(t.plUSD)}">${fmtMon(t.plUSD, 'USD')}</span></div></div><div class="r"><div class="a num">${fmtV(t.valorARS)}</div><div class="s num ${signo(pct)}">${mas(pct)}${fmtPct(pct)}</div>${pill(Sem.inversion(pct))}</div></button>`; }).join('') || empty('Cargá tus acciones con "+ Acción / cripto".')}</div></div>
     <div class="card"><h2>Cotizaciones<span class="sp"></span><span class="small muted">auto cada 5 min</span></h2><div class="quotes">${cotiz.join('')}</div>
       <div class="hint">Cripto: CoinGecko. Acciones, ETF y CEDEAR: hoja Cotizaciones (GOOGLEFINANCE). ${!S.cfg.scriptUrl ? 'Configurá el script para ver acciones y ETF.' : ''}</div></div>`;
 }
@@ -1399,16 +1428,63 @@ const FORMS = {
   Inversiones: {
     titulo: 'tenencia',
     campos: [
-      { n: 'activo', l: 'Activo (símbolo)', t: 'text', req: true, max: 20, patron: /^[A-Za-z0-9.\-_]+$/, ph: 'BTC, SPY, VOO, USD…', mayus: true, help: 'Para dólares en efectivo usá USD; para pesos, ARS.' },
-      { n: 'tipo', l: 'Tipo', t: 'select', o: opts({ cripto: 'Cripto', etf: 'ETF', accion: 'Acción', cedear: 'CEDEAR', efectivo: 'Efectivo', otro: 'Otro' }), half: true },
-      { n: 'plataforma', l: 'Plataforma', t: 'select', o: ['Cocos', 'Nexo', 'eToro', 'IOL', 'Bull Market', 'Efectivo USD', 'Otra'].map(x => [x, x]), half: true },
-      { n: 'cantidad', l: 'Cantidad', t: 'qty', req: true, min: 0.00000001 },
-      { n: 'precioCompra', l: 'Precio de compra (por unidad)', t: 'money', req: true, min: 0, half: true },
-      { n: 'monedaCompra', l: 'Moneda de compra', t: 'select', o: opts({ USD: 'Dólares', ARS: 'Pesos' }), half: true },
-      { n: 'tcCompra', l: 'Dólar al comprar (opcional)', t: 'money', min: 0, help: 'Mejora el cálculo de ganancia en pesos. Vacío: usa el dólar actual.' },
-      { n: 'fechaCompra', l: 'Fecha de compra (opcional)', t: 'date' },
+      { n: 'tipo', l: '¿Qué querés cargar?', t: 'select', o: opts({ accion: 'Acción', cedear: 'CEDEAR', etf: 'ETF', cripto: 'Cripto', fci: 'FCI (fondo común de inversión)', liquidez: 'Dinero disponible (cuenta o efectivo)', otro: 'Otro' }) },
+      { n: 'activo', l: 'Activo (símbolo)', t: 'text', req: true, max: 20, patron: /^[A-Za-z0-9.\-_]+$/, ph: 'SPY, VOO, BTC…', mayus: true, show: v => esMercado(v) },
+      { n: 'nombre', l: 'Nombre', t: 'text', req: true, max: 40, ph: 'Ej.: Cuenta Galicia, Mercado Pago, FCI Cocos Ahorro', show: v => !esMercado(v) },
+      { n: 'plataforma', l: 'Plataforma o banco', t: 'select', o: ['Cocos', 'IOL', 'Bull Market', 'eToro', 'Nexo', 'Galicia', 'HSBC', 'Mercado Pago', 'Naranja X', 'Lemon', 'Belo', 'AstroPay', 'Efectivo', 'Efectivo USD', 'Otra'].map(x => [x, x]), half: true },
+      { n: 'monedaCompra', l: 'Moneda', t: 'select', o: opts({ ARS: 'Pesos', USD: 'Dólares' }), half: true },
+      // Dinero disponible y FCI: se carga el saldo actual
+      { n: 'saldo', l: 'Saldo actual', t: 'money', req: true, min: 0, show: v => !esMercado(v), help: 'Lo que ves hoy en la cuenta o en el fondo. Actualizalo cuando cambie.' },
+      { n: 'invertido', l: 'Monto que pusiste (opcional)', t: 'money', min: 0, show: v => v.tipo === 'fci', help: 'Sirve para calcular cuánto ganó el fondo.' },
+      // Acciones, CEDEAR, ETF, cripto: por cantidad
+      { n: 'cantidad', l: 'Cantidad que tenés', t: 'qty', req: true, min: 0.00000001, show: v => esMercado(v), help: 'Cantidad de acciones, cuotapartes o monedas.' },
+      { n: 'modo', l: 'El precio lo cargo como…', t: 'select', o: opts({ unidad: 'Precio por unidad', total: 'Total que pagué' }), show: v => esMercado(v) },
+      { n: 'precioCompra', l: 'Precio de compra por unidad', t: 'money', req: true, min: 0, show: v => esMercado(v) && v.modo !== 'total' },
+      { n: 'montoTotal', l: 'Total que pagué', t: 'money', req: true, min: 0, show: v => esMercado(v) && v.modo === 'total' },
+      // Operaciones rápidas al editar una tenencia existente
+      { n: 'compraCant', l: '➕ Compré más: cantidad', t: 'qty', min: 0, half: true, show: v => esMercado(v) && !!formActual?.row?.id },
+      { n: 'compraPrecio', l: 'a precio por unidad', t: 'money', min: 0, half: true, show: v => esMercado(v) && !!formActual?.row?.id },
+      { n: 'ventaCant', l: '➖ Vendí: cantidad', t: 'qty', min: 0, show: v => esMercado(v) && !!formActual?.row?.id, help: 'Si vendés todo, la tenencia se borra.' },
+      { n: 'tcCompra', l: 'Dólar al comprar (opcional)', t: 'money', min: 0, show: v => esMercado(v), help: 'Mejora el cálculo de ganancia en pesos. Vacío: usa el dólar actual.' },
+      { n: 'fechaCompra', l: 'Fecha de compra (opcional)', t: 'date', show: v => esMercado(v) },
     ],
-    alCambiar(v, campo, set) { if (campo === 'tipo' && v.tipo === 'efectivo') { set('precioCompra', 1); set('plataforma', 'Efectivo USD'); if (!v.activo) set('activo', 'USD'); } },
+    // Pasa de la fila de la hoja a los campos del formulario
+    cargar(row) {
+      const r = { ...row, modo: 'unidad' };
+      if (row.tipo === 'efectivo') r.tipo = 'liquidez'; // tenencias viejas de efectivo
+      if (!esMercado(r)) { r.nombre = row.activo; r.saldo = row.cantidad; r.invertido = row.tipo === 'fci' ? row.precioCompra : ''; }
+      return r;
+    },
+    validar(v) {
+      const err = {};
+      if (esMercado(v)) {
+        const q = +(formActual?.row?.cantidad || v.cantidad) || 0;
+        if (+v.compraCant > 0 && !(+v.compraPrecio > 0)) err.compraPrecio = 'Poné el precio al que compraste.';
+        if (+v.ventaCant > (+v.cantidad || q) + (+v.compraCant || 0)) err.ventaCant = 'No podés vender más de lo que tenés.';
+        if (v.modo === 'total' && !(+v.montoTotal > 0)) err.montoTotal = 'Tiene que ser mayor a cero.';
+      }
+      return err;
+    },
+    // Pasa del formulario a las columnas de la hoja
+    alGuardar(r) {
+      if (!esMercado(r)) {
+        r.activo = r.nombre; r.cantidad = r.saldo;
+        r.precioCompra = r.tipo === 'fci' ? (+r.invertido || r.saldo) : r.saldo;
+        r.tcCompra = ''; r.fechaCompra = '';
+      } else {
+        if (r.modo === 'total') r.precioCompra = +r.montoTotal / +r.cantidad;
+        let q = +r.cantidad, p = +r.precioCompra;
+        if (+r.compraCant > 0) { const nq = q + +r.compraCant; p = (q * p + +r.compraCant * +r.compraPrecio) / nq; q = nq; }
+        if (+r.ventaCant > 0) q = q - +r.ventaCant;
+        r.cantidad = Math.round(q * 1e8) / 1e8; r.precioCompra = Math.round(p * 1e6) / 1e6;
+        if (r.cantidad <= 0) r._borrar = true;
+      }
+      for (const k of ['nombre', 'saldo', 'invertido', 'modo', 'montoTotal', 'compraCant', 'compraPrecio', 'ventaCant']) delete r[k];
+    },
+    alCambiar(v, campo, set) {
+      if (campo === 'tipo' && v.tipo === 'liquidez' && v.plataforma === 'Cocos') set('plataforma', 'Galicia');
+      if (campo === 'tipo' && ['accion', 'cedear', 'etf', 'cripto'].includes(v.tipo)) set('monedaCompra', v.tipo === 'cedear' ? 'ARS' : 'USD');
+    },
   },
   Vencimientos: {
     titulo: 'vencimiento',
@@ -1517,6 +1593,10 @@ function enviarForm() {
   const { hoja, def, extra } = formActual;
   const final = { ...(formActual.row || {}), ...(extra.fijos || {}), ...row };
   if (def.alGuardar) def.alGuardar(final);
+  if (final._borrar) { // por ejemplo, vendiste toda la tenencia
+    if (final.id) borrarFila(hoja, final.id);
+    cerrarForm(); toast('Vendiste todo: la tenencia se borró.', 'ok', 3000); return;
+  }
   guardarFila(hoja, final);
   cerrarForm();
   toast('Guardado ✓' + (S.cfg.scriptUrl ? '' : ' (en el dispositivo)'), 'ok', 2200);
@@ -1533,6 +1613,7 @@ document.addEventListener('click', e => {
   if (ds.mes) { S.ui[ds.mes] = addMonths(S.ui[ds.mes], +ds.d); return renderTodo(); }
   if (ds.vg) { S.ui.vistaGastos = ds.vg; return renderTodo(); }
   if (ds.fv) { S.ui.filtroVenc = ds.fv; return renderTodo(); }
+  if (ds.nuevaInv) { abrirForm('Inversiones', null, { vals: { tipo: ds.nuevaInv, plataforma: ds.nuevaInv === 'liquidez' ? 'Galicia' : 'Cocos', monedaCompra: ds.nuevaInv === 'accion' ? 'USD' : 'ARS' }, titulo: { accion: 'acción o cripto', liquidez: 'dinero disponible', fci: 'FCI' }[ds.nuevaInv] }); return; }
   if (ds.edit) { const row = S.data[ds.edit].find(r => r.id === ds.id); if (row) abrirForm(ds.edit, row); return; }
   if ('pagar' in ds) { const v = buscarVenc(t); if (v) marcarVenc(v, 'pagado'); return; }
   if ('despagar' in ds) { const v = buscarVenc(t); if (v) marcarVenc(v, 'pendiente'); return; }
