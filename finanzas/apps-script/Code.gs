@@ -10,6 +10,9 @@
  * Propiedades de la secuencia de comandos), toda llamada tiene que traer esa misma clave.
  */
 
+/** Versión del script: la app avisa si hay que actualizarlo. */
+var VERSION_SCRIPT = 2;
+
 /** Encabezados de cada hoja de datos. La columna "id" identifica cada fila. */
 var ESQUEMA = {
   Ingresos: ['id', 'fecha', 'concepto', 'categoria', 'monto', 'moneda', 'tipo', 'balde', 'nota', 'actualizado'],
@@ -44,12 +47,12 @@ function doGet(e) {
     var p = (e && e.parameter) || {};
     verificarToken_(p.token);
     var accion = p.action || 'all';
-    if (accion === 'ping') return json_({ ok: true, hora: new Date().toISOString() });
-    if (accion === 'cotizaciones') return json_({ ok: true, cotizaciones: leerCotizaciones_(), hora: new Date().toISOString() });
+    if (accion === 'ping') return json_({ ok: true, version: VERSION_SCRIPT, hora: new Date().toISOString() });
+    if (accion === 'cotizaciones') return json_({ ok: true, version: VERSION_SCRIPT, cotizaciones: leerCotizaciones_(), hora: new Date().toISOString() });
     if (accion === 'all') {
       var data = {};
       HOJAS_DATOS.forEach(function (h) { data[h] = leerHoja_(h); });
-      return json_({ ok: true, data: data, cotizaciones: leerCotizaciones_(), hora: new Date().toISOString() });
+      return json_({ ok: true, version: VERSION_SCRIPT, data: data, cotizaciones: leerCotizaciones_(), hora: new Date().toISOString() });
     }
     throw new Error('Acción desconocida: ' + accion);
   } catch (err) {
@@ -172,6 +175,7 @@ function leerHoja_(nombre) {
 
 function leerCotizaciones_() {
   var hoja = asegurarCotizaciones_();
+  agregarSimbolosFaltantes_(hoja);
   var n = hoja.getLastRow() - 1;
   if (n < 1) return [];
   var rango = hoja.getRange(2, 1, n, 5);
@@ -199,6 +203,30 @@ function leerCotizaciones_() {
     var precio = typeof v[2] === 'number' && isFinite(v[2]) && v[2] > 0 ? v[2] : null;
     var act = v[4] instanceof Date ? Utilities.formatDate(v[4], tz, "yyyy-MM-dd'T'HH:mm:ssXXX") : (v[4] ? String(v[4]) : ahora);
     return { simbolo: String(v[0]).trim().toUpperCase(), ticker: String(v[1] || ''), precio: precio, moneda: String(v[3] || 'USD').toUpperCase(), actualizado: act };
+  });
+}
+
+/**
+ * Agrega a Cotizaciones cada acción, ETF o CEDEAR cargado en Inversiones que todavía no tenga fila.
+ * Acciones y ETF: ticker = símbolo, en dólares. CEDEAR: ticker BCBA:símbolo, en pesos.
+ */
+function agregarSimbolosFaltantes_(hoja) {
+  var inv = SpreadsheetApp.getActive().getSheetByName('Inversiones');
+  if (!inv || inv.getLastRow() < 2) return;
+  var cols = encabezados_(inv);
+  var ia = cols.indexOf('activo'), it = cols.indexOf('tipo');
+  if (ia < 0 || it < 0) return;
+  var filas = inv.getRange(2, 1, inv.getLastRow() - 1, cols.length).getValues();
+  var n = hoja.getLastRow() - 1;
+  var existentes = n > 0 ? hoja.getRange(2, 1, n, 1).getValues().map(function (r) { return String(r[0]).trim().toUpperCase(); }) : [];
+  filas.forEach(function (r) {
+    var tipo = String(r[it]), sym = String(r[ia]).trim().toUpperCase();
+    if (['accion', 'etf', 'cedear'].indexOf(tipo) < 0 || !sym || existentes.indexOf(sym) >= 0) return;
+    existentes.push(sym);
+    var f = hoja.getLastRow() + 1;
+    hoja.getRange(f, 1, 1, 2).setValues([[sym, tipo === 'cedear' ? 'BCBA:' + sym : sym]]);
+    hoja.getRange(f, 3).setFormula(formulaPrecio_(f));
+    hoja.getRange(f, 4).setValue(tipo === 'cedear' ? 'ARS' : 'USD');
   });
 }
 
