@@ -143,6 +143,7 @@ section.view{display:none} section.view.on{display:block}
 .banner.bad{background:var(--bad-bg);border-color:var(--bad);color:#ffd4d4}
 .banner.warn{background:var(--warn-bg);border-color:var(--warn);color:#ffe9b8}
 .banner.info{background:rgba(57,135,229,.14);border-color:var(--acc);color:#d6e7ff}
+.banner.ok{background:var(--ok-bg);border-color:var(--ok);color:#dcf7dc}
 .banner b{font-weight:800}
 .banner .bi{font-size:20px;line-height:1}
 .banner button{text-decoration:underline;font-weight:800}
@@ -316,7 +317,7 @@ const LS = {
   set(k, v) { try { localStorage.setItem('fin.' + k, JSON.stringify(v)); } catch (e) { toast('No se pudo guardar en el dispositivo: ' + e.message, 'bad'); } },
 };
 /** Versión mínima del script de Google que necesita esta app (ver apps-script/Code.gs). */
-const VERSION_SCRIPT_MIN = 4;
+const VERSION_SCRIPT_MIN = 5;
 const HOJAS = ['Ingresos', 'Gastos', 'Cuotas', 'Inversiones', 'Vencimientos', 'Objetivos', 'Historial'];
 const NUMERICOS = ['monto', 'montoCuota', 'cuotasTotales', 'cantidad', 'precioCompra', 'tcCompra', 'meta', 'saldoInicial', 'patrimonioARS', 'patrimonioUSD', 'dolar'];
 const TARJETAS = ['visa', 'mastercard'];
@@ -335,7 +336,7 @@ const CRIPTO_EXTRA = { XRP: 'ripple', NEXO: 'nexo', XLM: 'stellar', SOL: 'solana
 const ESTABLES_USD = ['USDX'];
 
 const DEFAULT_CFG = {
-  scriptUrl: '', token: '', dolarTipo: 'mep', vista: 'ARS', presupuesto: 0, disponibleTarjetas: 0, mesesObjetivo: 12,
+  scriptUrl: '', token: '', dolarTipo: 'mep', vista: 'ARS', presupuesto: 0, disponibleTarjetas: 0, mesesObjetivo: 12, topeTarjetas: 0,
   tarjetas: { visa: { cierre: 25, venc: 5 }, mastercard: { cierre: 25, venc: 5 } },
   umbrales: {
     ahorroOk: 20, ahorroAt: 10, gastoOk: 80, gastoAt: 100, cobOk: 110, cobAt: 100, invAt: 5,
@@ -354,6 +355,7 @@ const S = {
   queue: LS.get('queue', []),
   quotes: mezclar({ dolar: {}, cripto: {}, mercado: {}, meta: {} }, LS.get('quotes', {})),
   hist: LS.get('hist', {}), // precios diarios por activo (US$)
+  contexto: LS.get('contexto', null), // contexto mundial y local (contexto.json)
   lastSync: LS.get('lastSync', null),
   sync: { estado: 'idle', error: '' },
   ui: { tab: 'resumen', periodo: 'mes', mesIng: mesActual(), mesGas: mesActual(), vistaGastos: 'todos', filtroVenc: 'pendientes' },
@@ -771,18 +773,25 @@ function aplicarMercado(lista) {
 }
 async function cargarMercado() {
   if (!S.cfg.scriptUrl) return;
-  try { const r = await llamarScript({ action: 'cotizaciones' }); S.quotes.meta.scriptVersion = r.version || 1; aplicarMercado(r.cotizaciones); }
+  try { const r = await llamarScript({ action: 'cotizaciones' }); S.quotes.meta.scriptVersion = r.version || 1; aplicarMercado(r.cotizaciones); if (r.riesgoPais && +r.riesgoPais.valor > 0 && !(S.quotes.riesgoPais?.fecha > r.riesgoPais.fecha)) S.quotes.riesgoPais = { ...r.riesgoPais, ts: new Date().toISOString() }; }
   catch (e) {
     for (const k in S.quotes.mercado) S.quotes.mercado[k].stale = true;
     S.quotes.meta.mercado = { ok: false, at: new Date().toISOString(), error: e.message };
     throw new Error('Acciones y ETF (hoja Cotizaciones): ' + e.message);
   }
 }
+/** Riesgo país (ArgentinaDatos). Si el navegador no puede, se usa el que trae el script de Google. */
+async function cargarRiesgoPais() {
+  try {
+    const j = await fetchJSON('https://api.argentinadatos.com/v1/finanzas/indices/riesgo-pais/ultimo');
+    if (j && +j.valor > 0) S.quotes.riesgoPais = { valor: +j.valor, fecha: j.fecha, ts: new Date().toISOString() };
+  } catch (e) { /* opcional: no se avisa */ }
+}
 let actualizandoCotiz = false;
 async function actualizarCotizaciones({ manual = false } = {}) {
   if (actualizandoCotiz) return;
   actualizandoCotiz = true; $('#ico-refresh').classList.add('spin');
-  const res = await Promise.allSettled([cargarDolar(), cargarCripto(), cargarMercado()]);
+  const res = await Promise.allSettled([cargarDolar(), cargarCripto(), cargarMercado(), cargarRiesgoPais(), cargarContexto()]);
   actualizandoCotiz = false; $('#ico-refresh').classList.remove('spin');
   S.quotes.meta.ultima = new Date().toISOString();
   LS.set('quotes', S.quotes);
@@ -803,8 +812,86 @@ function registrarPreciosDelDia() {
     if (h[d] !== p.usd) { h[d] = p.usd; cambio = true; }
     const dias = Object.keys(h).sort(); if (dias.length > 400) dias.slice(0, dias.length - 400).forEach(k => delete h[k]);
   }
+  // Indicadores para las alertas de mercado (claves con "_" para no mezclarlos con tus activos)
+  const ind = { _MEP: S.quotes.dolar.mep?.venta, _OFICIAL: S.quotes.dolar.oficial?.venta, _SPY: S.quotes.mercado.SPY?.precio, _VIX: S.quotes.mercado.VIX?.precio, _RIESGO: S.quotes.riesgoPais?.valor, BTC: S.quotes.cripto.BTC?.usd, PAXG: S.quotes.cripto.PAXG?.usd };
+  for (const [k, v] of Object.entries(ind)) {
+    if (!(v > 0)) continue;
+    const h = S.hist[k] || (S.hist[k] = {});
+    if (h[d] !== v) { h[d] = v; cambio = true; }
+    const dias = Object.keys(h).sort(); if (dias.length > 400) dias.slice(0, dias.length - 400).forEach(x => delete h[x]);
+  }
   if (cambio) LS.set('hist', S.hist);
 }
+
+/* ---------- Alertas de mercado (reglas simples con datos en vivo) ---------- */
+/** Valor de hace n días (o el más cercano anterior) y máximo de los últimos n días de un indicador. */
+function histStats(k, n) {
+  const h = S.hist[k] || {}; const desde = addDays(hoy(), -n);
+  const dias = Object.keys(h).filter(x => x >= desde && x < hoy()).sort();
+  if (!dias.length) return { max: NaN, inicio: NaN, dias: 0 };
+  return { max: Math.max(...dias.map(x => h[x])), inicio: h[dias[0]], dias: dias.length };
+}
+function alertasMercado() {
+  const out = [], add = (nivel, ico, titulo, texto) => out.push({ nivel, ico, titulo, texto });
+  const q = S.quotes;
+  // Dólar: salto en una semana y brecha con el oficial
+  const mep = q.dolar.mep?.venta, ofi = q.dolar.oficial?.venta;
+  if (mep > 0) {
+    const s7 = histStats('_MEP', 7);
+    const sube = s7.inicio > 0 ? (mep / s7.inicio - 1) * 100 : NaN;
+    if (sube >= 8) add('bad', '💵', `El dólar MEP subió ${fmtPct(sube, 1)} en una semana`, 'Cambio imprevisto. Tus ahorros en dólares te protegen: no vendas dólares ahora y frená compras grandes en pesos con tarjeta.');
+    else if (sube >= 4) add('warn', '💵', `El dólar MEP subió ${fmtPct(sube, 1)} en una semana`, 'Atención: puede venir más inflación. Mantené los ahorros en dólares.');
+    if (ofi > 0) { const brecha = (mep / ofi - 1) * 100; if (brecha >= 20) add(brecha >= 35 ? 'bad' : 'warn', '⚖️', `Brecha MEP–oficial: ${fmtPct(brecha, 0)}`, 'Señal de tensión cambiaria. No conviene pasar dólares a pesos salvo para gastos.'); }
+  }
+  // Riesgo país
+  const rp = q.riesgoPais?.valor;
+  if (rp > 0) {
+    const s7 = histStats('_RIESGO', 7), salto = s7.inicio > 0 ? rp - s7.inicio : NaN;
+    if (salto >= 100) add('bad', '🇦🇷', `Riesgo país +${fmtNum(salto, 0)} puntos en una semana (${fmtNum(rp, 0)})`, 'Cambio imprevisto en Argentina. No sumes bonos ni ONs argentinas ahora; priorizá fondos en dólares cortos y lo que tengas afuera.');
+    else if (rp >= 800) add('bad', '🇦🇷', `Riesgo país alto: ${fmtNum(rp, 0)} puntos`, 'Mercado nervioso por Argentina. Mantené los dólares en instrumentos cortos.');
+    else if (rp >= 650) add('warn', '🇦🇷', `Riesgo país: ${fmtNum(rp, 0)} puntos`, 'Incertidumbre preelectoral. Evitá bonos que venzan después de octubre de 2027.');
+  }
+  // Pánico en la bolsa de EE.UU.
+  const vix = q.mercado.VIX?.precio, spy = q.mercado.SPY?.precio;
+  if (vix >= 30) add('bad', '🌪️', `Pánico en los mercados (VIX ${fmtNum(vix, 0)})`, 'No vendas por miedo. Si tu fondo de emergencia está completo, es oportunidad para comprar de a poco el ETF de Vivienda (SCHD).');
+  else if (vix >= 22) add('warn', '🌫️', `Mercados nerviosos (VIX ${fmtNum(vix, 0)})`, 'Puede haber caídas fuertes. No hace falta hacer nada; no vendas en pánico.');
+  if (spy > 0) {
+    const s30 = histStats('_SPY', 30), caida = s30.max > 0 ? (1 - spy / s30.max) * 100 : NaN;
+    if (caida >= 10) add('ok', '💡', `Oportunidad: la bolsa de EE.UU. cayó ${fmtPct(caida, 0)} en el mes`, 'Si tu emergencia está completa, comprá SCHD en 2 o 3 partes, sin pasar del 10 % de Vivienda en acciones.');
+  }
+  // Bitcoin y oro: oportunidades con tope
+  const tr = estadoBaldes().find(b => b.key === 'inversion');
+  const btc = q.cripto.BTC?.usd;
+  if (btc > 0) {
+    const s30 = histStats('BTC', 30), caida = s30.max > 0 ? (1 - btc / s30.max) * 100 : NaN;
+    if (caida >= 15) add('ok', '💡', `Oportunidad: Bitcoin cayó ${fmtPct(caida, 0)} desde el máximo del mes`, tr && tr.pesoTotal < U().tradeOk ? `Podés comprar un poco con plata de Trading, sin pasar el tope del ${U().tradeOk} %.` : 'Trading ya está en el tope: no compres más.');
+  }
+  const oro = q.cripto.PAXG?.usd;
+  if (oro > 0) {
+    const s30 = histStats('PAXG', 30), caida = s30.max > 0 ? (1 - oro / s30.max) * 100 : NaN;
+    if (caida >= 8) add('ok', '💡', `Oportunidad: el oro bajó ${fmtPct(caida, 0)} en el mes`, 'El oro protege ante guerras y crisis. Si está debajo del 7 % de tu patrimonio, podés sumar un poco a Vivienda.');
+  }
+  // Tu plan: ventas que ya dan ganancia y tope de trading
+  const listas = valuarTenencias().filter(t => t.inv.plan === 'vender' && enGanancia(t));
+  if (listas.length) add('info', '💰', `${listas.length} inversión(es) para vender ya están en ganancia`, listas.slice(0, 4).map(t => esc(t.inv.activo)).join(', ') + (listas.length > 4 ? '…' : '') + '. Mirá el Plan de venta en Objetivos.');
+  if (tr && tr.nivel === 'bad') add('bad', '⚡', `Trading pasó el tope: ${fmtPct(tr.pesoTotal, 1)} de lo invertido`, `Vendé lo que sobre del ${U().tradeOk} % y pasalo a Vivienda.`);
+  return out;
+}
+/** Cambios en el contexto mundial y local (archivo contexto.json que se actualiza con la app). */
+async function cargarContexto() {
+  try { S.contexto = await fetchJSON('./contexto.json?v=' + Date.now()); LS.set('contexto', S.contexto); } catch (e) { /* sin red: queda el último guardado */ }
+}
+function cardAlertas() {
+  const al = alertasMercado();
+  const ctx = (S.contexto && S.contexto.items) || [];
+  const clase = n => (n === 'bad' ? 'bad' : n === 'warn' ? 'warn' : n === 'ok' ? 'ok' : 'info');
+  const item = a => `<div class="banner ${clase(a.nivel)}" style="margin:8px 0 0"><span class="bi">${a.ico}</span><div><b>${esc(a.titulo)}</b><br><span style="font-weight:400">${a.texto}</span></div></div>`;
+  const filaCtx = c => `<div class="item"><div class="main"><div class="t">${esc(c.tema || '')} ${c.nivel ? pill(c.nivel) : ''}</div><div class="s" style="white-space:normal"><b>${esc(c.titulo || '')}</b> ${esc(c.texto || '')}${c.accion ? `<br>👉 ${esc(c.accion)}` : ''}</div></div></div>`;
+  return `<div class="card"><h2>🔔 Alertas y oportunidades</h2>
+    ${al.length ? al.map(item).join('') : '<p class="small muted" style="margin:0">Sin alertas de mercado por ahora. Se revisan con cada actualización de cotizaciones.</p>'}
+    ${ctx.length ? `<details style="margin-top:12px"><summary class="small"><b>🌍 Contexto mundial y local</b> · actualizado ${esc(fmtFecha(S.contexto.actualizado || ''))}</summary><div class="list">${ctx.map(filaCtx).join('')}</div></details>` : ''}</div>`;
+}
+
 /** Guarda una "foto" diaria del patrimonio en la hoja Historial (como máximo cada 3 horas). */
 function fotoPatrimonio() {
   if (!S.data.Inversiones.length || !dolar()) return;
@@ -908,7 +995,50 @@ function bannersAlerta() {
   }
   const tj = alertaTarjetas();
   if (tj.supera) h += `<div class="banner bad" role="alert"><span class="bi">💳</span><div><b>Tarjetas:</b> tenés que pagar ${fmtV(tj.total)} en los próximos 30 días y tenés disponible ${fmtV(tj.disponible)}. Faltan ${fmtV(tj.total - tj.disponible)}.</div></div>`;
+  const topeT = +S.cfg.topeTarjetas || 0;
+  if (topeT > 0) {
+    const g = tarjetasDelMes(), pct = g / topeT * 100;
+    if (pct > 100) h += `<div class="banner bad" role="alert"><span class="bi">💳</span><div><b>Pasaste el tope de tarjetas del mes:</b> ${fmtV(g)} de ${fmtV(topeT)}. Frená las compras con tarjeta hasta el mes que viene.</div></div>`;
+    else if (pct >= 80) h += `<div class="banner warn"><span class="bi">💳</span><div><b>Tarjetas al ${fmtPct(pct, 0)} del tope del mes</b> (${fmtV(g)} de ${fmtV(topeT)}).</div></div>`;
+  }
+  const graves = alertasMercado().filter(a => a.nivel === 'bad');
+  if (graves.length) h += `<div class="banner bad" role="alert"><span class="bi">${graves[0].ico}</span><div><b>${esc(graves[0].titulo)}</b>${graves.length > 1 ? ` (y ${graves.length - 1} más)` : ''}. Mirá "Alertas y oportunidades" más abajo.</div></div>`;
   return h;
+}
+/** Promedio mensual de ingresos y gastos personales de los últimos n meses completos. */
+function promedios(n = 6, mov = movimientos()) {
+  const cur = mesActual(); let ing = 0, gas = 0, tarj = 0, m = 0;
+  for (let k = 1; k <= n; k++) {
+    const ym = addMonths(cur, -k);
+    const gi = sum(mov.ingresos.filter(i => i.fecha.startsWith(ym)), i => i.ars), gg = mov.gastos.filter(g => g.personal && g.fecha.startsWith(ym));
+    if (!gi && !gg.length) continue;
+    ing += gi; gas += sum(gg, g => g.ars); tarj += sum(gg.filter(esGastoTarjeta), g => g.ars); m++;
+  }
+  return m ? { ing: ing / m, gas: gas / m, tarj: tarj / m, ahorro: (ing - gas) / m, meses: m } : null;
+}
+/** Gasto con tarjeta: compras pagadas con Visa/Mastercard o el pago del resumen (categoría "Tarjeta de crédito"). */
+const esGastoTarjeta = g => TARJETAS.includes(g.medio) || g.cat === 'Tarjeta de crédito';
+function tarjetasDelMes(mov = movimientos()) {
+  const cur = mesActual();
+  return sum(mov.gastos.filter(g => g.personal && g.fecha.startsWith(cur) && esGastoTarjeta(g) && g.cat !== 'Cuotas'), g => g.ars);
+}
+function cardPlanMensual(mov = movimientos()) {
+  const pr = promedios(6, mov); if (!pr) return '';
+  const bs = estadoBaldes(mov);
+  const ideal = sum(bs.filter(b => !b.tope), b => b.aporte || 0);
+  const nivelAhorro = pr.ahorro >= ideal ? 'ok' : pr.ahorro >= ideal * 0.6 ? 'warn' : 'bad';
+  const topeT = +S.cfg.topeTarjetas || 0, tj = tarjetasDelMes(mov), pctT = topeT > 0 ? tj / topeT * 100 : NaN;
+  const nivT = !(topeT > 0) ? 'na' : pctT <= 80 ? 'ok' : pctT <= 100 ? 'warn' : 'bad';
+  const vac = bs.find(b => b.key === 'vacaciones');
+  const fila = (t, v, s = '') => `<div class="item"><div class="main"><div class="t" style="white-space:normal">${t}</div>${s ? `<div class="s" style="white-space:normal">${s}</div>` : ''}</div><div class="r"><div class="a num">${v}</div></div></div>`;
+  return `<div class="card"><h2>🎯 Plan mensual<span class="sp"></span>${pill(nivelAhorro)}</h2>
+    <div class="list">
+      ${fila('Ahorro ideal por mes', fmtV(ideal), bs.filter(b => !b.tope && b.aporte > 0).map(b => `${b.ico} ${fmtV(b.aporte)}`).join(' · ') || 'Definí las metas en Objetivos')}
+      ${fila('Ahorro promedio (6 meses)', `<span class="${signo(pr.ahorro)}">${fmtV(pr.ahorro)}</span>`, `Ingresás ${fmtV(pr.ing)} y gastás ${fmtV(pr.gas)} por mes · ${pr.ahorro >= ideal ? 'te alcanza para las metas' : `faltan ${fmtV(ideal - pr.ahorro)} por mes`}`)}
+      ${fila('Gasto máximo del mes', fmtV(Math.max(0, pr.ing - ideal)), 'Ingreso promedio menos el ahorro ideal')}
+      ${fila('Tarjetas este mes', topeT > 0 ? `${fmtV(tj)} <span class="small muted">de ${fmtV(topeT)}</span>` : fmtV(tj), topeT > 0 ? `${pill(nivT)} Promedio 6 meses: ${fmtV(pr.tarj)}` : 'Poné un tope en Ajustes')}
+      ${vac && vac.meta > 0 ? fila('Presupuesto máximo de vacaciones', fmtV(vac.meta), `Lo que juntes en el balde hasta ${vac.row.fechaMeta ? fmtFecha(vac.row.fechaMeta) : 'la fecha'}; no lo pagues con tarjeta en cuotas`) : ''}
+    </div>${topeT > 0 ? barra(pctT, nivT) : ''}</div>`;
 }
 /** Dinero disponible: cuentas y efectivo cargados en Inversiones como "Dinero disponible". */
 function dineroDisponible() {
@@ -970,6 +1100,8 @@ function renderResumen() {
     <div class="seg" role="group" aria-label="Período">${[['hoy', 'Hoy'], ['semana', '7 días'], ['mes', 'Mes'], ['tres', '3 meses'], ['anio', 'Año']].map(([v, t]) => `<button data-periodo="${v}" aria-pressed="${S.ui.periodo === v}">${t}</button>`).join('')}</div>
     <div class="kpis" id="kpis"><div class="kpage">${k.slice(0, 4).join('')}</div><div class="kpage">${k.slice(4).join('')}</div></div>
     <div class="dots" aria-hidden="true"><span class="on"></span><span></span></div>
+    ${cardPlanMensual(mov)}
+    ${cardAlertas()}
     ${(() => { const dd = dineroDisponible(); return `<div class="card"><h2>Dinero disponible<span class="sp"></span><button class="btn sm" data-tab="inversiones">Ver y editar</button></h2>
       <div class="big num">${fmtV(dd.ars)}</div><div class="small muted">${dd.items.length ? dd.items.map(i => `${esc(i.activo)}: ${fmtMon(+i.cantidad, i.monedaCompra === 'USD' || String(i.activo).toUpperCase() === 'USD' ? 'USD' : 'ARS')}`).join(' · ') : 'Todavía no cargaste cuentas ni efectivo.'}</div></div>`; })()}
     <div class="card"><h2>Dólar <span class="sp"></span><span class="small muted">convierte con ${DOLARES[S.cfg.dolarTipo]}</span></h2>
@@ -1459,6 +1591,7 @@ function renderAjustes() {
       <div class="field"><label for="a-dolar">Dólar para convertir</label><select id="a-dolar">${Object.entries(DOLARES).map(([k, n]) => `<option value="${k}" ${c.dolarTipo === k ? 'selected' : ''}>${n}</option>`).join('')}</select></div></div></div>
     <div class="card"><h2>Presupuesto y tarjetas</h2>
       <div class="grid2">${num('a-presu', c.presupuesto, 'Presupuesto mensual ($)')}${num('a-disp', c.disponibleTarjetas, 'Disponible para tarjetas ($)')}</div>
+      ${num('a-topet', c.topeTarjetas, 'Tope de gasto con tarjetas por mes ($)')}
       ${num('a-meses', c.mesesObjetivo, 'Meses por defecto para llegar a las metas')}
       ${TARJETAS.map(m => `<div class="grid2">${num(`a-${m}-cierre`, c.tarjetas[m].cierre, `${MEDIOS[m]}: día de cierre`)}${num(`a-${m}-venc`, c.tarjetas[m].venc, `${MEDIOS[m]}: día de vencimiento`)}</div>`).join('')}</div>
     <div class="card"><h2>Umbrales del semáforo</h2>
@@ -1478,7 +1611,7 @@ function guardarAjustes(form) {
   else if (url && !/^https:\/\/script\.google(usercontent)?\.com\//.test(url)) { setErr('a-url', ''); toast('Ojo: la URL no parece de Google Apps Script.', 'warn'); }
   else setErr('a-url', '');
   const nuevo = mezclar(S.cfg, {});
-  nuevo.presupuesto = leer('a-presu', 0, 1e12); nuevo.disponibleTarjetas = leer('a-disp', 0, 1e12); nuevo.mesesObjetivo = leer('a-meses', 1, 600, true);
+  nuevo.presupuesto = leer('a-presu', 0, 1e12); nuevo.topeTarjetas = leer('a-topet', 0, 1e12); nuevo.disponibleTarjetas = leer('a-disp', 0, 1e12); nuevo.mesesObjetivo = leer('a-meses', 1, 600, true);
   for (const m of TARJETAS) nuevo.tarjetas[m] = { cierre: leer(`a-${m}-cierre`, 1, 31, true), venc: leer(`a-${m}-venc`, 1, 31, true) };
   for (const [, campos] of UMBRALES_UI) for (const [k] of campos) nuevo.umbrales[k] = leer('u-' + k, 0, 1000);
   const u = nuevo.umbrales;
@@ -1839,8 +1972,11 @@ async function importarDesdeEnlace() {
     const txt = await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
     const datos = JSON.parse(txt);
     const hojas = Object.keys(datos).filter(h => HOJAS.includes(h) && Array.isArray(datos[h].rows));
-    if (!hojas.length) throw new Error('El enlace no tiene datos para importar.');
-    const resumen = hojas.map(h => `${datos[h].rows.length} ${h.toLowerCase()}`).join(' y ');
+    // Ajustes que puede traer el enlace (solo estos campos)
+    const cfgOk = ['presupuesto', 'topeTarjetas', 'mesesObjetivo'];
+    const cfgNuevo = datos.cfg && typeof datos.cfg === 'object' ? Object.fromEntries(Object.entries(datos.cfg).filter(([k, v]) => cfgOk.includes(k) && isFinite(+v) && +v >= 0).map(([k, v]) => [k, +v])) : {};
+    if (!hojas.length && !Object.keys(cfgNuevo).length) throw new Error('El enlace no tiene datos para importar.');
+    const resumen = [...hojas.map(h => `${datos[h].rows.length} ${h.toLowerCase()}`), ...(Object.keys(cfgNuevo).length ? ['tus topes de gasto'] : [])].join(' y ');
     if (!confirm(`Se van a cargar ${resumen}. Si ya estaban cargados, se actualizan sin duplicarse. ¿Continuar?`)) return;
     const ahora = new Date().toISOString();
     for (const h of hojas) {
@@ -1857,6 +1993,7 @@ async function importarDesdeEnlace() {
         encolar({ op: 'upsert', hoja: h, row });
       }
     }
+    if (Object.keys(cfgNuevo).length) { Object.assign(S.cfg, cfgNuevo); guardarCfg(); }
     guardarDatos();
     toast(`Listo: ${resumen}. ${S.cfg.scriptUrl ? 'Se está guardando en tu planilla; puede tardar unos minutos.' : 'Configurá la URL del script para guardarlo en tu planilla.'}`, 'ok', 9000);
   } catch (e) {

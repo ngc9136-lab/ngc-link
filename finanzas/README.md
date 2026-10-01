@@ -201,3 +201,11 @@ La app son archivos estáticos: `index.html`, `manifest.webmanifest`, `sw.js` e 
 ## Privacidad
 
 La URL del script, la clave y los ajustes se guardan **solo en el dispositivo** (`localStorage`). Los archivos no traen datos personales. Desde **Ajustes** podés descargar una copia en JSON o borrar los datos locales; la hoja de Google no se toca.
+
+## Plan mensual y alertas
+
+- **Plan mensual** (en Resumen): ahorro ideal por mes (la suma de lo que necesita cada balde para llegar a su meta en fecha), ahorro promedio de los últimos 6 meses, gasto máximo del mes, tarjetas del mes contra el tope (Ajustes → "Tope de gasto con tarjetas por mes") y presupuesto máximo de vacaciones.
+- **Alertas y oportunidades** (en Resumen), con datos en vivo: salto del dólar MEP o brecha con el oficial, riesgo país ([ArgentinaDatos](https://argentinadatos.com/docs/)), pánico en la bolsa (VIX), caídas fuertes de la bolsa de EE.UU., Bitcoin u oro, ventas del plan que ya dan ganancia y trading arriba del tope. Las alertas graves aparecen arriba de todo.
+- **Contexto mundial y local**: se lee de `contexto.json` (se actualiza junto con la app).
+- El script (v5) agrega solo las filas `SPY` y `VIX` en Cotizaciones y trae el riesgo país.
+
