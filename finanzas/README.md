@@ -215,4 +215,4 @@ La URL del script, la clave y los ajustes se guardan **solo en el dispositivo** 
   - Tarjetas contra el tope, cuotas del mes y las que quedan, gastos de hoy / 7 días / mes y lo cobrado.
 - **Actualización automática**: al abrir o volver a la app se busca la versión nueva y la app se recarga sola. La versión se ve en Más.
 - El script v6 agrega solo cualquier columna nueva que mande la app, así no hace falta volver a actualizarlo.
-
+- **Deshacer / Rehacer** (botones abajo a la izquierda en todas las pantallas, o Ctrl+Z / Ctrl+Y): deshace altas, cambios y borrados, incluidos los pagos marcados. Los cambios hechos juntos se deshacen de una vez. Se guardan los últimos 40 pasos en el dispositivo.
