@@ -11,7 +11,7 @@
  */
 
 /** Versión del script: la app avisa si hay que actualizarlo. */
-var VERSION_SCRIPT = 4;
+var VERSION_SCRIPT = 5;
 
 /** Encabezados de cada hoja de datos. La columna "id" identifica cada fila. */
 var ESQUEMA = {
@@ -48,11 +48,11 @@ function doGet(e) {
     verificarToken_(p.token);
     var accion = p.action || 'all';
     if (accion === 'ping') return json_({ ok: true, version: VERSION_SCRIPT, hora: new Date().toISOString() });
-    if (accion === 'cotizaciones') return json_({ ok: true, version: VERSION_SCRIPT, cotizaciones: leerCotizaciones_(), hora: new Date().toISOString() });
+    if (accion === 'cotizaciones') return json_({ ok: true, version: VERSION_SCRIPT, cotizaciones: leerCotizaciones_(), riesgoPais: riesgoPais_(), hora: new Date().toISOString() });
     if (accion === 'all') {
       var data = {};
       HOJAS_DATOS.forEach(function (h) { data[h] = leerHoja_(h); });
-      return json_({ ok: true, version: VERSION_SCRIPT, data: data, cotizaciones: leerCotizaciones_(), hora: new Date().toISOString() });
+      return json_({ ok: true, version: VERSION_SCRIPT, data: data, cotizaciones: leerCotizaciones_(), riesgoPais: riesgoPais_(), hora: new Date().toISOString() });
     }
     throw new Error('Acción desconocida: ' + accion);
   } catch (err) {
@@ -176,6 +176,7 @@ function leerHoja_(nombre) {
 function leerCotizaciones_() {
   var hoja = asegurarCotizaciones_();
   agregarSimbolosFaltantes_(hoja);
+  agregarIndicadores_(hoja);
   var n = hoja.getLastRow() - 1;
   if (n < 1) return [];
   var rango = hoja.getRange(2, 1, n, 5);
@@ -204,6 +205,39 @@ function leerCotizaciones_() {
     var act = v[4] instanceof Date ? Utilities.formatDate(v[4], tz, "yyyy-MM-dd'T'HH:mm:ssXXX") : (v[4] ? String(v[4]) : ahora);
     return { simbolo: String(v[0]).trim().toUpperCase(), ticker: String(v[1] || ''), precio: precio, moneda: String(v[3] || 'USD').toUpperCase(), actualizado: act };
   });
+}
+
+/** Indicadores para las alertas de la app: S&P 500 (SPY) y el índice del miedo (VIX). */
+var INDICADORES = [['SPY', 'NYSEARCA:SPY', 'USD'], ['VIX', 'INDEXCBOE:VIX', 'USD']];
+function agregarIndicadores_(hoja) {
+  var n = hoja.getLastRow() - 1;
+  var tiene = n > 0 ? hoja.getRange(2, 1, n, 1).getValues().map(function (r) { return String(r[0]).trim().toUpperCase(); }) : [];
+  INDICADORES.forEach(function (x) {
+    if (tiene.indexOf(x[0]) >= 0) return;
+    var f = hoja.getLastRow() + 1;
+    hoja.getRange(f, 1, 1, 2).setValues([[x[0], x[1]]]);
+    hoja.getRange(f, 4).setValue(x[2]);
+    tiene.push(x[0]);
+  });
+}
+
+/** Riesgo país desde ArgentinaDatos (se guarda 30 minutos). Si falla, devuelve null. */
+function riesgoPais_() {
+  try {
+    var cache = typeof CacheService !== 'undefined' ? CacheService.getScriptCache() : null;
+    var guardado = cache && cache.get('riesgoPais');
+    if (guardado) return JSON.parse(guardado);
+    if (typeof UrlFetchApp === 'undefined') return null;
+    var r = UrlFetchApp.fetch('https://api.argentinadatos.com/v1/finanzas/indices/riesgo-pais/ultimo', { muteHttpExceptions: true });
+    if (r.getResponseCode() !== 200) return null;
+    var j = JSON.parse(r.getContentText());
+    if (!(Number(j.valor) > 0)) return null;
+    var out = { valor: Number(j.valor), fecha: String(j.fecha || '') };
+    if (cache) cache.put('riesgoPais', JSON.stringify(out), 1800);
+    return out;
+  } catch (e) {
+    return null;
+  }
 }
 
 /**

@@ -1,0 +1,61 @@
+{
+  "actualizado": "2026-10-01",
+  "items": [
+    {
+      "tema": "🇮🇷 Irán y EE.UU.",
+      "nivel": "bad",
+      "titulo": "Volvieron los ataques en septiembre.",
+      "texto": "El petróleo pasó los US$ 90 y las bolsas cayeron. Más petróleo caro significa más inflación en EE.UU.",
+      "accion": "Mantené el oro (PAXG) como cobertura y no compres acciones de golpe."
+    },
+    {
+      "tema": "🇺🇸 Tasas en EE.UU.",
+      "nivel": "warn",
+      "titulo": "La Fed subió la tasa a 3,75–4 % (16/9).",
+      "texto": "La inflación está en 3,4 %. Los bonos cortos del Tesoro y los fondos en dólares rinden bien; las acciones de tecnología se mueven más.",
+      "accion": "Para el anticipo, priorizá IB01, fondos en dólares y USDC."
+    },
+    {
+      "tema": "🇨🇳 China",
+      "nivel": "warn",
+      "titulo": "Reunión Xi–Trump el 24/9, pero siguen los aranceles.",
+      "texto": "El comercio entre EE.UU. y China cayó cerca de 30 %. Las acciones chinas siguen expuestas a nuevas sanciones.",
+      "accion": "No sumes acciones chinas (Alibaba, JD, Nio); vendelas cuando recuperen."
+    },
+    {
+      "tema": "🇺🇦 Ucrania y Rusia",
+      "nivel": "warn",
+      "titulo": "EE.UU. empuja negociaciones; la guerra sigue.",
+      "texto": "Se habla de un alto el fuego en energía y de reabrir el corredor de granos. Un acuerdo bajaría el petróleo y ayudaría a las bolsas.",
+      "accion": "No hace falta hacer nada; la app te avisa si hay movimientos fuertes."
+    },
+    {
+      "tema": "🇰🇵 Corea del Norte",
+      "nivel": "warn",
+      "titulo": "Más misiles y minas en la frontera (fines de septiembre).",
+      "texto": "Suma tensión, pero por ahora sin impacto grande en los mercados.",
+      "accion": "Sin cambios."
+    },
+    {
+      "tema": "🥇 Oro",
+      "nivel": "ok",
+      "titulo": "Está 21 % abajo del récord de enero.",
+      "texto": "Cerca de US$ 4.300–4.400 la onza. Sigue siendo la mejor cobertura ante guerras.",
+      "accion": "Mantené tu oro cerca del 7 % del total; si baja más, la app te avisa."
+    },
+    {
+      "tema": "🇦🇷 Argentina preelectoral",
+      "nivel": "warn",
+      "titulo": "Riesgo país entre 600 y 640 puntos; dólar MEP ≈ $1.550.",
+      "texto": "El mercado no quiere bonos que venzan después de las elecciones de octubre de 2027. El dólar está tranquilo, pero puede moverse a medida que se acerquen.",
+      "accion": "Ahorrá en dólares, en fondos de deuda de empresas y con parte afuera. Pesos, solo para gastos."
+    },
+    {
+      "tema": "🏭 Albanesi y Celulosa",
+      "nivel": "bad",
+      "titulo": "Las dos empresas están en concurso preventivo.",
+      "texto": "Albanesi prepara su propuesta a los acreedores; Celulosa tiene informe del síndico el 10/11.",
+      "accion": "No vendas esas ONs ahora (valen muy poco): esperá la propuesta de pago."
+    }
+  ]
+}
