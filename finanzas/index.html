@@ -1040,6 +1040,47 @@ function cardPlanMensual(mov = movimientos()) {
       ${vac && vac.meta > 0 ? fila('Presupuesto máximo de vacaciones', fmtV(vac.meta), `Lo que juntes en el balde hasta ${vac.row.fechaMeta ? fmtFecha(vac.row.fechaMeta) : 'la fecha'}; no lo pagues con tarjeta en cuotas`) : ''}
     </div>${topeT > 0 ? barra(pctT, nivT) : ''}</div>`;
 }
+/* ---------- "Te sobra este mes" (como la celda Sobra de la planilla: Tengo − Pendiente) ---------- */
+const normTexto = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+/** Pesos que tenés hoy para gastar: cuentas, efectivo y fondos en pesos (sin los dólares, que son ahorro). */
+function pesosDisponibles() {
+  const items = S.data.Inversiones.filter(i => ['liquidez', 'efectivo', 'fci'].includes(i.tipo) && i.monedaCompra !== 'USD' && String(i.activo).toUpperCase() !== 'USD' && +i.cantidad > 0);
+  return { items, total: sum(items, i => +i.cantidad) };
+}
+/** Lo que falta pagar del mes: vencimientos pendientes hasta fin de mes y gastos fijos (o resúmenes de tarjeta)
+ *  del mes pasado que todavía no cargaste este mes, estimados con el monto del mes pasado. */
+function pendienteDelMes(mov = movimientos()) {
+  const cur = mesActual(), fin = addDays(addMonths(cur, 1) + '-01', -1), prev = addMonths(cur, -1);
+  const pagados = new Set(mov.gastos.filter(g => g.personal && g.fecha.startsWith(cur)).map(g => normTexto(g.desc)));
+  const items = [];
+  const venc = vencimientosTodos().filter(v => v.estado !== 'pagado' && v.fecha <= fin && +v.monto > 0);
+  for (const v of venc) items.push({ concepto: v.concepto, ars: toARS(v.monto, v.moneda), fecha: v.fecha, origen: v.fecha < hoy() ? 'Vencido' : 'Vencimiento' });
+  const hayResumenAuto = venc.some(v => v.origen === 'tarjeta');
+  const yaEstan = new Set(items.map(i => normTexto(i.concepto)));
+  const vistos = new Set();
+  for (const g of mov.gastos.filter(g => g.personal && g.fecha.startsWith(prev) && g.cat !== 'Cuotas' && (g.fijo || g.cat === 'Tarjeta de crédito'))) {
+    const k = normTexto(g.desc);
+    if (!k || pagados.has(k) || yaEstan.has(k)) continue;
+    if (g.cat === 'Tarjeta de crédito' && hayResumenAuto) continue;
+    if (vistos.has(k)) { items.find(i => i.k === k).ars += g.ars; continue; }
+    vistos.add(k);
+    items.push({ k, concepto: g.desc, ars: g.ars, fecha: cur + g.fecha.slice(7), origen: 'Fijo (estimado)' });
+  }
+  items.sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
+  return { items, total: sum(items, i => i.ars) };
+}
+function cardSobra(mov = movimientos()) {
+  const t = pesosDisponibles(), pe = pendienteDelMes(mov), sobra = t.total - pe.total;
+  if (!t.items.length && !pe.items.length) return '';
+  const nivel = sobra >= 0 ? 'ok' : 'bad';
+  const fila = (a, b, s = '') => `<div class="item"><div class="main"><div class="t">${esc(a)}</div>${s ? `<div class="s">${s}</div>` : ''}</div><div class="r"><div class="a num">${b}</div></div></div>`;
+  return `<div class="card"><h2>💵 ${sobra >= 0 ? 'Te sobra este mes' : 'Te falta este mes'}<span class="sp"></span>${pill(nivel)}</h2>
+    <div class="big num ${sobra >= 0 ? 'pos' : 'neg'}">${fmtMon(sobra, 'ARS')}</div>
+    <div class="small muted">${dolar() ? `≈ ${fmtMon(sobra / dolar(), 'USD')} · ` : ''}Tenés ${fmtMon(t.total, 'ARS')} en pesos − falta pagar ${fmtMon(pe.total, 'ARS')}</div>
+    <details style="margin-top:10px"><summary class="small">Tenés en pesos (${t.items.length})</summary><div class="list">${t.items.map(i => fila(i.activo, fmtMon(+i.cantidad, 'ARS'), esc(i.plataforma || ''))).join('') || empty('Cargá tus cuentas en pesos en Inversiones → + Dinero disponible.')}</div></details>
+    <details><summary class="small">Falta pagar (${pe.items.length})</summary><div class="list">${pe.items.map(i => fila(i.concepto, fmtMon(i.ars, 'ARS'), `${fmtDM(i.fecha)} · ${i.origen}`)).join('') || empty('No falta pagar nada este mes.')}</div>
+      <p class="small muted">Los fijos se estiman con lo que pagaste el mes pasado. Cuando cargues el gasto de este mes con el mismo nombre, sale de la lista.</p></details></div>`;
+}
 /** Dinero disponible: cuentas y efectivo cargados en Inversiones como "Dinero disponible". */
 function dineroDisponible() {
   const items = S.data.Inversiones.filter(i => i.tipo === 'liquidez' || i.tipo === 'efectivo');
@@ -1100,6 +1141,7 @@ function renderResumen() {
     <div class="seg" role="group" aria-label="Período">${[['hoy', 'Hoy'], ['semana', '7 días'], ['mes', 'Mes'], ['tres', '3 meses'], ['anio', 'Año']].map(([v, t]) => `<button data-periodo="${v}" aria-pressed="${S.ui.periodo === v}">${t}</button>`).join('')}</div>
     <div class="kpis" id="kpis"><div class="kpage">${k.slice(0, 4).join('')}</div><div class="kpage">${k.slice(4).join('')}</div></div>
     <div class="dots" aria-hidden="true"><span class="on"></span><span></span></div>
+    ${cardSobra(mov)}
     ${cardPlanMensual(mov)}
     ${cardAlertas()}
     ${(() => { const dd = dineroDisponible(); return `<div class="card"><h2>Dinero disponible<span class="sp"></span><button class="btn sm" data-tab="inversiones">Ver y editar</button></h2>

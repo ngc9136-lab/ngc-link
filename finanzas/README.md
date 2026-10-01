@@ -208,4 +208,5 @@ La URL del script, la clave y los ajustes se guardan **solo en el dispositivo** 
 - **Alertas y oportunidades** (en Resumen), con datos en vivo: salto del dólar MEP o brecha con el oficial, riesgo país ([ArgentinaDatos](https://argentinadatos.com/docs/)), pánico en la bolsa (VIX), caídas fuertes de la bolsa de EE.UU., Bitcoin u oro, ventas del plan que ya dan ganancia y trading arriba del tope. Las alertas graves aparecen arriba de todo.
 - **Contexto mundial y local**: se lee de `contexto.json` (se actualiza junto con la app).
 - El script (v5) agrega solo las filas `SPY` y `VIX` en Cotizaciones y trae el riesgo país.
+- **Te sobra este mes** (en Resumen), igual que la celda "Sobra" de la planilla mensual: pesos que tenés hoy (cuentas, efectivo y fondos en pesos) menos lo que falta pagar del mes. Lo que falta pagar suma los vencimientos pendientes hasta fin de mes y los gastos fijos (y resúmenes de tarjeta) del mes pasado que todavía no se cargaron este mes, estimados con el monto del mes pasado.
 
