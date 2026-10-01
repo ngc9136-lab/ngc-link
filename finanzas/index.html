@@ -77,8 +77,8 @@ section.view{display:none} section.view.on{display:block}
 .card h2 .sp{flex:1}
 .muted{color:var(--muted)} .small{font-size:13px} .txt2{color:var(--txt2)}
 .big{font-size:clamp(24px,8vw,32px);font-weight:800;letter-spacing:-.5px;line-height:1.15;overflow-wrap:anywhere}
-.mid{font-size:21px;font-weight:800;line-height:1.2;overflow-wrap:anywhere}
-.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.mid{font-size:clamp(16px,5.4vw,21px);font-weight:800;line-height:1.2;white-space:nowrap}
+.row2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
 .stat{background:var(--card2);border-radius:12px;padding:10px 12px;min-width:0}
 .stat .l{font-size:13px;color:var(--muted)} .stat .v{font-size:clamp(16px,5vw,20px);font-weight:800;overflow-wrap:anywhere}
 
@@ -314,6 +314,8 @@ const LS = {
   get(k, def) { try { const v = localStorage.getItem('fin.' + k); return v == null ? def : JSON.parse(v); } catch (e) { return def; } },
   set(k, v) { try { localStorage.setItem('fin.' + k, JSON.stringify(v)); } catch (e) { toast('No se pudo guardar en el dispositivo: ' + e.message, 'bad'); } },
 };
+/** Versión mínima del script de Google que necesita esta app (ver apps-script/Code.gs). */
+const VERSION_SCRIPT_MIN = 3;
 const HOJAS = ['Ingresos', 'Gastos', 'Cuotas', 'Inversiones', 'Vencimientos', 'Objetivos', 'Historial'];
 const NUMERICOS = ['monto', 'montoCuota', 'cuotasTotales', 'cantidad', 'precioCompra', 'tcCompra', 'meta', 'saldoInicial', 'patrimonioARS', 'patrimonioUSD', 'dolar'];
 const TARJETAS = ['visa', 'mastercard'];
@@ -323,7 +325,7 @@ const BALDES = [
   { key: 'emergencia', nombre: 'Fondo de emergencia', ico: '🛟' },
   { key: 'vivienda', nombre: 'Vivienda', ico: '🏠' },
   { key: 'vacaciones', nombre: 'Vacaciones', ico: '🏖️' },
-  { key: 'inversion', nombre: 'Inversión largo plazo (cripto)', ico: '📈' },
+  { key: 'inversion', nombre: 'Trading (agresivo)', ico: '⚡' }, // la clave queda 'inversion' para no perder lo ya asignado
 ];
 const CRIPTO_IDS = { BTC: 'bitcoin', ETH: 'ethereum', USDT: 'tether', USDC: 'usd-coin', PAXG: 'pax-gold' };
 /** Otras cripto conocidas (símbolo → id de CoinGecko). Se consultan solo si las tenés cargadas. */
@@ -336,7 +338,7 @@ const DEFAULT_CFG = {
   tarjetas: { visa: { cierre: 25, venc: 5 }, mastercard: { cierre: 25, venc: 5 } },
   umbrales: {
     ahorroOk: 20, ahorroAt: 10, gastoOk: 80, gastoAt: 100, cobOk: 110, cobAt: 100, invAt: 5,
-    concOk: 30, concAt: 35, fondoUrg: 3, fondoOk: 6, btcMin: 3, btcMax: 7, btcTol: 2, deudaDias: 30, cuotasOk: 30, cuotasAt: 50,
+    concOk: 30, concAt: 35, fondoUrg: 3, fondoOk: 6, btcMin: 3, btcMax: 7, btcTol: 2, deudaDias: 30, cuotasOk: 30, cuotasAt: 50, tradeOk: 10, tradeAt: 15,
   },
 };
 function mezclar(base, extra) { // mezcla profunda simple para configuraciones
@@ -574,16 +576,26 @@ function deudaNegocio() {
   const diasMax = items.length ? diffDays(items[0].fecha, hoy()) : 0;
   return { items, total, diasMax, nivel: Sem.deuda(total, diasMax) };
 }
-/** Estado de los cuatro baldes de ahorro. */
+/** Estado de los cuatro baldes de ahorro. El saldo suma lo ya ahorrado, los ingresos asignados
+ *  y el valor de hoy de las inversiones asignadas al balde (se actualiza con las cotizaciones). */
 function estadoBaldes(mov = movimientos()) {
   const gprom = gastoMensualPromedio(mov), aprom = ahorroMensualPromedio(mov), cur = mesActual();
+  const ten = valuarTenencias(), totalInv = sum(ten, t => t.valorARS);
   return BALDES.map(b => {
     const row = S.data.Objetivos.find(o => o.balde === b.key) || { balde: b.key };
     const mon = row.moneda || 'ARS';
     const aportes = sum(S.data.Ingresos.filter(i => i.balde === b.key), i => toARS(i.monto, i.moneda));
-    const saldo = toARS(+row.saldoInicial || 0, mon) + aportes;
+    const activos = ten.filter(t => t.inv.balde === b.key).sort((x, y) => y.valorARS - x.valorARS);
+    const valorActivos = sum(activos, t => t.valorARS);
+    const saldo = toARS(+row.saldoInicial || 0, mon) + aportes + valorActivos;
     let meta = toARS(+row.meta || 0, mon), auto = false;
     if (b.key === 'emergencia' && !(meta > 0)) { meta = gprom * U().fondoOk; auto = true; }
+    if (b.key === 'inversion') { // trading: la "meta" es un tope, no conviene pasarlo
+      const pesoTotal = totalInv > 0 ? valorActivos / totalInv * 100 : NaN;
+      const tope = totalInv * U().tradeOk / 100;
+      const nivel = !activos.length && !saldo ? 'na' : !isFinite(pesoTotal) ? 'na' : pesoTotal <= U().tradeOk ? 'ok' : pesoTotal <= U().tradeAt ? 'warn' : 'bad';
+      return { ...b, row, saldo, meta: tope, auto: true, tope: true, pct: tope > 0 ? saldo / tope * 100 : NaN, falta: 0, aporte: 0, mesesRest: 0, nivel, meses: NaN, aportes, activos, valorActivos, pesoTotal };
+    }
     const vencida = row.fechaMeta && row.fechaMeta < hoy();
     const mesesRest = row.fechaMeta ? Math.max(1, monthsBetween(cur, row.fechaMeta.slice(0, 7))) : +S.cfg.mesesObjetivo || 12;
     const falta = Math.max(0, meta - saldo), aporte = falta / mesesRest;
@@ -594,7 +606,7 @@ function estadoBaldes(mov = movimientos()) {
     else if (falta <= 0) nivel = 'ok';
     else if (vencida) nivel = 'bad';
     else nivel = aporte <= Math.max(aprom, 0) ? 'ok' : 'warn';
-    return { ...b, row, saldo, meta, auto, pct, falta, aporte, mesesRest, nivel, meses: gprom > 0 ? saldo / gprom : NaN, aportes };
+    return { ...b, row, saldo, meta, auto, pct, falta, aporte, mesesRest, nivel, meses: gprom > 0 ? saldo / gprom : NaN, aportes, activos, valorActivos };
   });
 }
 
@@ -1251,11 +1263,11 @@ function renderInversiones() {
   const mercado = ten.filter(t => !esSaldo(t.inv) && t.inv.tipo !== 'efectivo');
   const monSaldo = i => (i.monedaCompra === 'USD' || String(i.activo).toUpperCase() === 'USD' ? 'USD' : 'ARS');
   const sinCotizAcciones = mercado.filter(t => t.p.sinCotiz && ['accion', 'etf', 'cedear'].includes(t.inv.tipo));
-  const scriptViejo = S.cfg.scriptUrl && (S.quotes.meta.scriptVersion || 1) < 2;
+  const scriptViejo = S.cfg.scriptUrl && (S.quotes.meta.scriptVersion || 1) < VERSION_SCRIPT_MIN;
   const simbolosGraf = [...new Set(mercado.map(t => String(t.inv.activo).toUpperCase()))].filter(x => !ESTABLES_USD.includes(x));
   if (!simbolosGraf.includes(S.ui.histSym)) S.ui.histSym = simbolosGraf[0] || '';
   $('#v-inversiones').innerHTML = `
-    ${scriptViejo || sinCotizAcciones.length ? `<div class="banner warn"><span class="bi">!</span><div>${sinCotizAcciones.length ? `${sinCotizAcciones.length} acción(es) o ETF todavía sin cotización (${sinCotizAcciones.slice(0, 5).map(t => esc(t.inv.activo)).join(', ')}): se muestran con el precio de compra.` : ''} ${scriptViejo ? '<b>Actualizá el script de Google</b> (una sola vez) para que las acciones se coticen solas.' : 'Puede tardar unos minutos la primera vez.'}</div></div>` : ''}
+    ${scriptViejo || sinCotizAcciones.length ? `<div class="banner warn"><span class="bi">!</span><div>${sinCotizAcciones.length ? `${sinCotizAcciones.length} acción(es) o ETF todavía sin cotización (${sinCotizAcciones.slice(0, 5).map(t => esc(t.inv.activo)).join(', ')}): se muestran con el precio de compra.` : ''} ${scriptViejo ? '<b>Actualizá el script de Google</b> (una sola vez) para que las acciones se coticen solas y se guarden los baldes.' : 'Puede tardar unos minutos la primera vez.'}</div></div>` : ''}
     <div class="btns" style="margin-bottom:12px">
       <button class="btn pri" data-nueva-inv="accion">+ Acción / cripto</button>
       <button class="btn" data-nueva-inv="liquidez">+ Dinero disponible</button>
@@ -1359,17 +1371,38 @@ function marcarVenc(v, estado) {
 /* =====================================================================
    21. PESTAÑA OBJETIVOS (baldes)
    ===================================================================== */
+const PROPOSITO_BALDE = {
+  emergencia: 'Plata segura y rápida de sacar: dólares en cuenta y fondos de liquidez.',
+  vivienda: 'Largo plazo y riesgo moderado: dólares que rinden, bonos cortos, oro y ETF de dividendos.',
+  vacaciones: 'Dólares que puedas usar en pocos meses, sin riesgo de precio.',
+  inversion: 'Lo agresivo para operar (cripto chicas, acciones volátiles). Que no pase el tope.',
+};
+function selectBalde(attr, id, actual = '') {
+  return `<select class="hsel" style="max-width:100%;height:44px" ${attr}="${esc(id)}" aria-label="Asignar a balde"><option value="">${actual ? 'Sin balde' : 'Asignar…'}</option>${BALDES.map(b => `<option value="${b.key}" ${actual === b.key ? 'selected' : ''}>${b.nombre}</option>`).join('')}</select>`;
+}
 function renderObjetivos() {
   const bs = estadoBaldes();
   const sinAsignar = S.data.Ingresos.filter(i => i.tipo === 'variable' && !i.balde).sort((a, b) => (a.fecha < b.fecha ? 1 : -1)).slice(0, 15);
-  $('#v-objetivos').innerHTML = bs.map(b => `
+  const invSinBalde = valuarTenencias().filter(t => !t.inv.balde && t.valorARS > 0).sort((a, b) => b.valorARS - a.valorARS);
+  const filaActivo = t => `<div class="item"><div class="main"><div class="t">${esc(t.inv.activo)}</div><div class="s">${esc(t.inv.plataforma || '')}</div></div><div class="r"><div class="a num">${fmtV(t.valorARS)}</div></div></div>`;
+  const textoMeta = b => b.tope ? `Tope (${U().tradeOk}% de lo invertido)` : `Meta${b.auto ? ` (auto: ${U().fondoOk} meses de gasto)` : ''}`;
+  const detalle = b => {
+    if (b.tope) return isFinite(b.pesoTotal) ? `Es el <b class="num">${fmtPct(b.pesoTotal, 1)}</b> de lo invertido · ${b.pesoTotal <= U().tradeOk ? 'dentro del tope' : `pasa el tope: bajalo a ${U().tradeOk}%`}` : 'Asigná acá tus activos para operar.';
+    return `${isFinite(b.pct) ? `${fmtPct(b.pct, 0)} completado · ` : ''}${b.falta > 0 ? `Aporte sugerido: <b class="num">${fmtV(b.aporte)}</b>/mes durante ${b.mesesRest} meses` : b.meta > 0 ? '¡Meta cumplida!' : 'Definí una meta'}${b.key === 'emergencia' && isFinite(b.meses) ? ` · cubre ${fmtNum(b.meses, 1)} meses de gastos` : ''}`;
+  };
+  const scriptViejo = S.cfg.scriptUrl && (S.quotes.meta.scriptVersion || 1) < VERSION_SCRIPT_MIN;
+  $('#v-objetivos').innerHTML = (scriptViejo ? `<div class="banner warn"><span class="bi">!</span><div><b>Actualizá el script de Google</b> (una sola vez). Si no, el balde de cada inversión no se guarda en tu planilla y se pierde al sincronizar.</div></div>` : '') + bs.map(b => `
     <div class="card"><h2><span aria-hidden="true">${b.ico}</span>${b.nombre}<span class="sp"></span>${pill(b.nivel)}</h2>
-      <div class="row2"><div><div class="small muted">Saldo</div><div class="mid num">${fmtV(b.saldo)}</div></div><div><div class="small muted">Meta${b.auto ? ` (auto: ${U().fondoOk} meses de gasto)` : ''}</div><div class="mid num">${b.meta > 0 ? fmtV(b.meta) : '—'}</div></div></div>
+      <p class="small muted" style="margin:-4px 0 10px">${PROPOSITO_BALDE[b.key] || ''}</p>
+      <div class="row2"><div><div class="small muted">Saldo</div><div class="mid num">${fmtV(b.saldo)}</div></div><div><div class="small muted">${textoMeta(b)}</div><div class="mid num">${b.meta > 0 ? fmtV(b.meta) : '—'}</div></div></div>
       ${barra(b.pct, b.nivel === 'na' ? '' : b.nivel)}
-      <div class="small txt2" style="margin-top:8px">${isFinite(b.pct) ? `${fmtPct(b.pct, 0)} completado · ` : ''}${b.falta > 0 ? `Aporte sugerido: <b class="num">${fmtV(b.aporte)}</b>/mes durante ${b.mesesRest} meses` : b.meta > 0 ? '¡Meta cumplida!' : 'Definí una meta'}${b.key === 'emergencia' && isFinite(b.meses) ? ` · cubre ${fmtNum(b.meses, 1)} meses de gastos` : ''}</div>
-      <div class="btns" style="margin-top:10px"><button class="btn sm" data-balde="${b.key}">Editar meta y saldo</button></div></div>`).join('') + `
+      <div class="small txt2" style="margin-top:8px">${detalle(b)}</div>
+      ${b.activos.length ? `<details style="margin-top:10px"><summary class="small">Qué tiene adentro (${b.activos.length})</summary><div class="list">${b.activos.map(filaActivo).join('')}</div></details>` : ''}
+      ${b.tope ? '' : `<div class="btns" style="margin-top:10px"><button class="btn sm" data-balde="${b.key}">Editar meta y saldo</button></div>`}</div>`).join('') + `
+    <div class="card"><h2>Inversiones sin balde</h2>
+      ${invSinBalde.length ? `<p class="small muted">Elegí a qué balde va cada una. Su valor se suma solo al balde y se actualiza con las cotizaciones.</p><div class="list">${invSinBalde.map(t => `<div class="item"><div class="main"><div class="t">${esc(t.inv.activo)}</div><div class="s">${esc(t.inv.plataforma || '')} · ${fmtV(t.valorARS)}</div></div><div class="r" style="max-width:48%">${selectBalde('data-asignar-inv', t.inv.id)}</div></div>`).join('')}</div>` : empty('Todas tus inversiones tienen balde.')}</div>` + `
     <div class="card"><h2>Ingresos variables sin asignar</h2>
-      ${sinAsignar.length ? `<div class="list">${sinAsignar.map(i => `<div class="item"><div class="main"><div class="t">${esc(i.concepto)}</div><div class="s">${fmtFecha(i.fecha)} · ${fmtMon(+i.monto, i.moneda)}</div></div><div class="r" style="max-width:48%"><select class="hsel" style="max-width:100%;height:44px" data-asignar="${esc(i.id)}" aria-label="Asignar a balde"><option value="">Asignar…</option>${BALDES.map(b => `<option value="${b.key}">${b.nombre}</option>`).join('')}</select></div></div>`).join('')}</div>` : empty('Todos los ingresos variables están asignados.')}</div>`;
+      ${sinAsignar.length ? `<div class="list">${sinAsignar.map(i => `<div class="item"><div class="main"><div class="t">${esc(i.concepto)}</div><div class="s">${fmtFecha(i.fecha)} · ${fmtMon(+i.monto, i.moneda)}</div></div><div class="r" style="max-width:48%">${selectBalde('data-asignar', i.id)}</div></div>`).join('')}</div>` : empty('Todos los ingresos variables están asignados.')}</div>`;
 }
 
 /* =====================================================================
@@ -1385,6 +1418,7 @@ const UMBRALES_UI = [
   ['Bitcoin (% del patrimonio)', [['btcMin', 'Banda mínima'], ['btcMax', 'Banda máxima'], ['btcTol', 'Tolerancia amarilla (puntos)']]],
   ['Deuda del negocio', [['deudaDias', 'Rojo si pasan más de (días)']]],
   ['Cuotas a 30 días (% del ingreso fijo)', [['cuotasOk', 'Verde hasta'], ['cuotasAt', 'Amarillo hasta']]],
+  ['Trading (% del total invertido)', [['tradeOk', 'Verde hasta (y límite)'], ['tradeAt', 'Amarillo hasta']]],
 ];
 function renderAjustes() {
   const c = S.cfg;
@@ -1512,6 +1546,7 @@ const FORMS = {
       { n: 'ventaCant', l: '➖ Vendí: cantidad', t: 'qty', min: 0, show: v => esMercado(v) && !!formActual?.row?.id, help: 'Si vendés todo, la tenencia se borra.' },
       { n: 'tcCompra', l: 'Dólar al comprar (opcional)', t: 'money', min: 0, show: v => esMercado(v), help: 'Mejora el cálculo de ganancia en pesos. Vacío: usa el dólar actual.' },
       { n: 'fechaCompra', l: 'Fecha de compra (opcional)', t: 'date', show: v => esMercado(v) },
+      { n: 'balde', l: 'Balde (objetivo)', t: 'select', o: [['', 'Sin balde'], ...BALDES.map(b => [b.key, b.nombre])], help: 'Su valor se suma a ese objetivo.' },
     ],
     // Pasa de la fila de la hoja a los campos del formulario
     cargar(row) {
@@ -1732,6 +1767,7 @@ document.addEventListener('submit', e => {
 document.addEventListener('change', e => {
   const t = e.target;
   if (t.id === 'hist-sym') { S.ui.histSym = t.value; dibujarHistorial(t.value); return; }
+  if (t.dataset.asignarInv !== undefined && t.value) { const i = S.data.Inversiones.find(x => x.id === t.dataset.asignarInv); if (i) { guardarFila('Inversiones', { ...i, balde: t.value }); toast('Inversión asignada ✓', 'ok', 2000); } return; }
   if (t.dataset.asignar !== undefined && t.value) { const i = S.data.Ingresos.find(x => x.id === t.dataset.asignar); if (i) { guardarFila('Ingresos', { ...i, balde: t.value }); toast('Ingreso asignado ✓', 'ok', 2000); } return; }
   if (formActual && t.closest('#form-fila')) {
     const campo = t.name;
@@ -1778,20 +1814,23 @@ async function importarDesdeEnlace() {
     const hojas = Object.keys(datos).filter(h => HOJAS.includes(h) && Array.isArray(datos[h].rows));
     if (!hojas.length) throw new Error('El enlace no tiene datos para importar.');
     const resumen = hojas.map(h => `${datos[h].rows.length} ${h.toLowerCase()}`).join(' y ');
-    if (!confirm(`Se van a cargar ${resumen} del historial. Si ya estaban cargados, se actualizan sin duplicarse. ¿Continuar?`)) return;
+    if (!confirm(`Se van a cargar ${resumen}. Si ya estaban cargados, se actualizan sin duplicarse. ¿Continuar?`)) return;
     const ahora = new Date().toISOString();
     for (const h of hojas) {
-      const { cols, rows } = datos[h];
+      const { cols, rows, soloCampos } = datos[h];
       for (const r of rows) {
-        const row = normalizarFila(Object.fromEntries(cols.map((c, i) => [c, r[i] ?? ''])));
+        let row = normalizarFila(Object.fromEntries(cols.map((c, i) => [c, r[i] ?? ''])));
         if (!row.id) continue;
+        // soloCampos: si la fila ya existe, solo se cambian esos campos (no pisa saldos que editaste)
+        const previa = Array.isArray(soloCampos) && S.data[h].find(x => x.id === row.id);
+        if (previa) row = { ...previa, ...Object.fromEntries(soloCampos.map(c => [c, row[c]])) };
         row.actualizado = ahora;
         upsertLocal(h, row);
         encolar({ op: 'upsert', hoja: h, row });
       }
     }
     guardarDatos();
-    toast(`Historial cargado: ${resumen}. ${S.cfg.scriptUrl ? 'Se está guardando en tu planilla; puede tardar unos minutos.' : 'Configurá la URL del script para guardarlo en tu planilla.'}`, 'ok', 9000);
+    toast(`Listo: ${resumen}. ${S.cfg.scriptUrl ? 'Se está guardando en tu planilla; puede tardar unos minutos.' : 'Configurá la URL del script para guardarlo en tu planilla.'}`, 'ok', 9000);
   } catch (e) {
     toast('No se pudo importar el historial: ' + e.message, 'bad');
   }
