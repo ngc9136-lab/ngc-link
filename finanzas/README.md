@@ -70,10 +70,10 @@ La primera fila tiene los encabezados. La columna `id` identifica cada fila y la
 |---|---|
 | id | Identificador |
 | activo | Símbolo: `BTC`, `ETH`, `USDT`, `USDC`, `PAXG`, `VOO`, `SPY`… Para dólares en efectivo, `USD`; para pesos, `ARS`. |
-| tipo | `accion`, `cedear`, `etf`, `cripto`, `fci`, `liquidez` (dinero disponible en cuentas o efectivo), `otro` |
+| tipo | `accion`, `cedear`, `etf`, `cripto`, `fci`, `on` (obligación negociable), `valuado` (otro activo con valor cargado a mano), `liquidez` (dinero disponible en cuentas o efectivo), `otro` |
 | plataforma | `Cocos`, `Nexo`, `eToro`, `IOL`, `Bull Market`, `Efectivo USD`, `Otra` |
-| cantidad | Cantidad de acciones o monedas. Para `fci` y `liquidez`: **saldo actual** |
-| precioCompra | Precio promedio de compra por unidad. Para `fci`: **monto invertido total**; para `liquidez`: igual al saldo |
+| cantidad | Cantidad de acciones o monedas. Para `fci`, `on`, `valuado` y `liquidez`: **saldo actual** |
+| precioCompra | Precio promedio de compra por unidad. Para `fci`, `on` y `valuado`: **monto invertido total**; para `liquidez`: igual al saldo |
 | monedaCompra | `USD` o `ARS` |
 | tcCompra | Opcional: dólar del día de compra, para calcular mejor la ganancia en pesos |
 | fechaCompra | Opcional |
