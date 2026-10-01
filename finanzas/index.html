@@ -1822,7 +1822,8 @@ async function importarDesdeEnlace() {
         let row = normalizarFila(Object.fromEntries(cols.map((c, i) => [c, r[i] ?? ''])));
         if (!row.id) continue;
         // soloCampos: si la fila ya existe, solo se cambian esos campos (no pisa saldos que editaste)
-        const previa = Array.isArray(soloCampos) && S.data[h].find(x => x.id === row.id);
+        // Objetivos: hay una fila por balde; si ya existe con otro id, se actualiza esa
+        const previa = Array.isArray(soloCampos) && S.data[h].find(x => x.id === row.id || (h === 'Objetivos' && row.balde && x.balde === row.balde));
         if (previa) row = { ...previa, ...Object.fromEntries(soloCampos.map(c => [c, row[c]])) };
         row.actualizado = ahora;
         upsertLocal(h, row);
