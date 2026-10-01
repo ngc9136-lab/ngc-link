@@ -136,6 +136,9 @@ section.view{display:none} section.view.on{display:block}
 .btns{display:flex;gap:10px;flex-wrap:wrap}
 .btns>.btn{flex:1 1 140px}
 
+.undobar{position:fixed;left:12px;bottom:calc(var(--nav-h) + var(--safe-b) + 16px);z-index:25;display:flex;gap:6px;background:#0e141bee;border:1px solid var(--line);border-radius:14px;padding:4px}
+.undobar button{height:40px;min-width:48px;padding:0 10px;border-radius:10px;background:var(--card2);color:var(--txt);font-weight:700;font-size:13px;display:inline-flex;align-items:center;gap:4px}
+.undobar button:disabled{opacity:.35}
 .fab{position:fixed;right:16px;bottom:calc(var(--nav-h) + var(--safe-b) + 16px);z-index:25;width:62px;height:62px;border-radius:20px;
   background:var(--acc);color:#fff;font-size:34px;font-weight:400;box-shadow:0 8px 24px rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center}
 
@@ -231,6 +234,7 @@ details.card>summary::after{content:" ▾";color:var(--muted)}
   <section class="view" id="v-mas"></section>
 </main>
 
+<div class="undobar" role="group" aria-label="Deshacer y rehacer"><button id="btn-undo" title="Deshacer (Ctrl+Z)" aria-label="Deshacer el último cambio" disabled>↶ <span>Deshacer</span></button><button id="btn-redo" title="Rehacer (Ctrl+Y)" aria-label="Rehacer" disabled>↷ <span>Rehacer</span></button></div>
 <button class="fab" id="fab" aria-label="Agregar" hidden>+</button>
 
 <nav class="bottom" id="nav" aria-label="Secciones"></nav>
@@ -321,7 +325,7 @@ const LS = {
 /** Versión mínima del script de Google que necesita esta app (ver apps-script/Code.gs). */
 const VERSION_SCRIPT_MIN = 5;
 /** Versión visible de la app (se ve en Más). Cambiarla junto con VERSION en sw.js. */
-const APP_VERSION = '2026-10-02.2';
+const APP_VERSION = '2026-10-02.3';
 const HOJAS = ['Ingresos', 'Gastos', 'Cuotas', 'Inversiones', 'Vencimientos', 'Objetivos', 'Historial'];
 const NUMERICOS = ['monto', 'montoCuota', 'cuotasTotales', 'cantidad', 'precioCompra', 'tcCompra', 'meta', 'saldoInicial', 'patrimonioARS', 'patrimonioUSD', 'dolar'];
 const TARJETAS = ['visa', 'mastercard'];
@@ -636,9 +640,46 @@ function encolar(op) {
   S.queue = S.queue.filter(q => !(q.hoja === op.hoja && (q.row ? q.row.id : q.id) === id));
   S.queue.push(op);
 }
+/* ---------- Deshacer / rehacer (como en Excel) ----------
+ * Cada cambio guarda cómo estaba la fila antes y cómo quedó. Los cambios hechos juntos
+ * (menos de 0,6 s entre sí, por ejemplo un "marcar todo") se deshacen de una vez. */
+const HIST = { pasos: LS.get('deshacer', []), rehacer: LS.get('rehacer', []), aplicando: false };
+const copia = r => (r ? JSON.parse(JSON.stringify(r)) : null);
+function registrarCambio(hoja, antes, despues) {
+  if (HIST.aplicando) return;
+  const ahora = Date.now(), ult = HIST.pasos[HIST.pasos.length - 1];
+  const op = { hoja, antes: copia(antes), despues: copia(despues) };
+  if (ult && ahora - ult.t < 600) { ult.ops.push(op); ult.t = ahora; } else HIST.pasos.push({ t: ahora, ops: [op] });
+  if (HIST.pasos.length > 40) HIST.pasos.splice(0, HIST.pasos.length - 40);
+  HIST.rehacer = [];
+  guardarHist();
+}
+function guardarHist() { LS.set('deshacer', HIST.pasos); LS.set('rehacer', HIST.rehacer); renderUndo(); }
+function renderUndo() { const u = $('#btn-undo'), r = $('#btn-redo'); if (u) u.disabled = !HIST.pasos.length; if (r) r.disabled = !HIST.rehacer.length; }
+function aplicarFila(hoja, row, idBorrar) {
+  if (row) { const r = { ...row, actualizado: new Date().toISOString() }; upsertLocal(hoja, r); encolar({ op: 'upsert', hoja, row: r }); }
+  else { borrarLocal(hoja, idBorrar); encolar({ op: 'delete', hoja, id: idBorrar }); }
+}
+const nombreFila = r => (r && (r.concepto || r.descripcion || r.activo || r.nombre)) || 'registro';
+function deshacer() {
+  const paso = HIST.pasos.pop(); if (!paso) return toast('No hay nada para deshacer.', 'info', 2000);
+  HIST.aplicando = true;
+  try { for (const o of [...paso.ops].reverse()) aplicarFila(o.hoja, o.antes, o.despues && o.despues.id); } finally { HIST.aplicando = false; }
+  HIST.rehacer.push(paso); guardarHist(); guardarDatos(); renderTodo(); programarSync();
+  const o = paso.ops[0]; toast(`↶ Deshecho: ${paso.ops.length > 1 ? paso.ops.length + ' cambios' : nombreFila(o.despues || o.antes)}`, 'ok', 2500);
+}
+function rehacer() {
+  const paso = HIST.rehacer.pop(); if (!paso) return toast('No hay nada para rehacer.', 'info', 2000);
+  HIST.aplicando = true;
+  try { for (const o of paso.ops) aplicarFila(o.hoja, o.despues, o.antes && o.antes.id); } finally { HIST.aplicando = false; }
+  HIST.pasos.push(paso); guardarHist(); guardarDatos(); renderTodo(); programarSync();
+  const o = paso.ops[0]; toast(`↷ Rehecho: ${paso.ops.length > 1 ? paso.ops.length + ' cambios' : nombreFila(o.despues || o.antes)}`, 'ok', 2500);
+}
 function guardarFila(hoja, row, { render = true } = {}) {
   row.id = row.id || uid();
+  const antes = S.data[hoja].find(r => r.id === row.id);
   row.actualizado = new Date().toISOString();
+  registrarCambio(hoja, antes, row);
   upsertLocal(hoja, row);
   encolar({ op: 'upsert', hoja, row });
   guardarDatos();
@@ -647,6 +688,7 @@ function guardarFila(hoja, row, { render = true } = {}) {
   return row;
 }
 function borrarFila(hoja, id) {
+  registrarCambio(hoja, S.data[hoja].find(r => r.id === id), null);
   borrarLocal(hoja, id);
   encolar({ op: 'delete', hoja, id });
   guardarDatos(); renderTodo(); programarSync();
@@ -2143,6 +2185,7 @@ async function importarDesdeEnlace() {
         const previa = Array.isArray(soloCampos) && S.data[h].find(x => x.id === row.id || (h === 'Objetivos' && row.balde && x.balde === row.balde));
         if (previa) row = { ...previa, ...Object.fromEntries(soloCampos.map(c => [c, row[c]])) };
         row.actualizado = ahora;
+        registrarCambio(h, S.data[h].find(x => x.id === row.id), row);
         upsertLocal(h, row);
         encolar({ op: 'upsert', hoja: h, row });
       }
@@ -2155,7 +2198,15 @@ async function importarDesdeEnlace() {
   }
 }
 
+document.addEventListener('keydown', e => {
+  if (!(e.ctrlKey || e.metaKey) || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+  const k = e.key.toLowerCase();
+  if (k === 'z' && !e.shiftKey) { e.preventDefault(); deshacer(); } else if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); rehacer(); }
+});
 async function iniciar() {
+  $('#btn-undo').addEventListener('click', deshacer);
+  $('#btn-redo').addEventListener('click', rehacer);
+  renderUndo();
   irA('mes');
   setSync(S.cfg.scriptUrl ? (navigator.onLine ? 'idle' : 'offline') : 'local');
   await importarDesdeEnlace();
