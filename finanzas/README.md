@@ -77,6 +77,7 @@ La primera fila tiene los encabezados. La columna `id` identifica cada fila y la
 | monedaCompra | `USD` o `ARS` |
 | tcCompra | Opcional: dólar del día de compra, para calcular mejor la ganancia en pesos |
 | fechaCompra | Opcional |
+| balde | Opcional: `emergencia`, `vivienda`, `vacaciones` o `inversion` (trading). Su valor de hoy se suma a ese objetivo |
 | actualizado | Automático |
 
 **Vencimientos**
@@ -98,7 +99,9 @@ Los resúmenes de tarjeta y las cuotas que no se pagan con tarjeta los **calcula
 | balde | `emergencia`, `vivienda`, `vacaciones`, `inversion` |
 | nombre | Texto |
 | meta, moneda | Meta del balde. Si el fondo de emergencia no tiene meta, se usa 6 meses de gasto promedio. |
-| saldoInicial | Lo que ya tenías ahorrado. Se le suman los ingresos variables asignados al balde. |
+| saldoInicial | Lo que ya tenías ahorrado. Se le suman los ingresos variables asignados al balde. y el valor de hoy de las inversiones asignadas. |
+
+El balde `inversion` es **Trading (agresivo)**: en vez de meta tiene un tope (por defecto 10 % de lo invertido, configurable en Ajustes). El semáforo se pone amarillo o rojo si se pasa.
 | fechaMeta | Opcional: fecha objetivo para calcular el aporte mensual sugerido |
 | actualizado | Automático |
 
