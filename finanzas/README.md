@@ -78,6 +78,8 @@ La primera fila tiene los encabezados. La columna `id` identifica cada fila y la
 | tcCompra | Opcional: dólar del día de compra, para calcular mejor la ganancia en pesos |
 | fechaCompra | Opcional |
 | balde | Opcional: `emergencia`, `vivienda`, `vacaciones` o `inversion` (trading). Su valor de hoy se suma a ese objetivo |
+| plan | Opcional: `vender` (la app la muestra como "Vender ya" si hoy da ganancia, o "Vender al recuperar" si da pérdida) o `esperar` |
+| notaPlan | Opcional: qué hacer con la plata al vender (por ejemplo, "pasar a USDC") |
 | actualizado | Automático |
 
 **Vencimientos**

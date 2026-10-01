@@ -11,14 +11,14 @@
  */
 
 /** Versión del script: la app avisa si hay que actualizarlo. */
-var VERSION_SCRIPT = 3;
+var VERSION_SCRIPT = 4;
 
 /** Encabezados de cada hoja de datos. La columna "id" identifica cada fila. */
 var ESQUEMA = {
   Ingresos: ['id', 'fecha', 'concepto', 'categoria', 'monto', 'moneda', 'tipo', 'balde', 'nota', 'actualizado'],
   Gastos: ['id', 'fecha', 'categoria', 'descripcion', 'monto', 'moneda', 'medio', 'ambito', 'fijo', 'devuelto', 'fechaDevolucion', 'actualizado'],
   Cuotas: ['id', 'descripcion', 'medio', 'montoCuota', 'moneda', 'cuotasTotales', 'mesPrimeraCuota', 'ambito', 'actualizado'],
-  Inversiones: ['id', 'activo', 'tipo', 'plataforma', 'cantidad', 'precioCompra', 'monedaCompra', 'tcCompra', 'fechaCompra', 'balde', 'actualizado'],
+  Inversiones: ['id', 'activo', 'tipo', 'plataforma', 'cantidad', 'precioCompra', 'monedaCompra', 'tcCompra', 'fechaCompra', 'balde', 'plan', 'notaPlan', 'actualizado'],
   Vencimientos: ['id', 'concepto', 'monto', 'moneda', 'fecha', 'medio', 'estado', 'origen', 'ref', 'actualizado'],
   Objetivos: ['id', 'balde', 'nombre', 'meta', 'moneda', 'saldoInicial', 'fechaMeta', 'actualizado'],
   Historial: ['id', 'fecha', 'patrimonioARS', 'patrimonioUSD', 'dolar', 'actualizado']
