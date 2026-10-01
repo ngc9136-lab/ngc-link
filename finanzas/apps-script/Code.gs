@@ -11,7 +11,7 @@
  */
 
 /** Versión del script: la app avisa si hay que actualizarlo. */
-var VERSION_SCRIPT = 5;
+var VERSION_SCRIPT = 6;
 
 /** Encabezados de cada hoja de datos. La columna "id" identifica cada fila. */
 var ESQUEMA = {
@@ -110,6 +110,14 @@ function aplicarOp_(op) {
     var row = op.row || {};
     if (!row.id) throw new Error('Falta el id de la fila.');
     validarFila_(op.hoja, row);
+    // Columnas nuevas que mande la app (versiones futuras): se agregan solas al final,
+    // así no hace falta volver a actualizar este script.
+    var nuevas = Object.keys(row).filter(function (k) { return /^[A-Za-z][A-Za-z0-9]{0,40}$/.test(k) && cols.indexOf(k) < 0; });
+    if (nuevas.length) {
+      hoja.getRange(1, cols.length + 1, 1, nuevas.length).setValues([nuevas]);
+      darFormato_(hoja, encabezados_(hoja));
+      cols = encabezados_(hoja);
+    }
     var valores = cols.map(function (c) { return aCelda_(c, row[c]); });
     var fila = buscarFila_(hoja, row.id);
     if (fila < 0) fila = hoja.getLastRow() + 1;

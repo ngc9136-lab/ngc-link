@@ -208,5 +208,11 @@ La URL del script, la clave y los ajustes se guardan **solo en el dispositivo** 
 - **Alertas y oportunidades** (en Resumen), con datos en vivo: salto del dólar MEP o brecha con el oficial, riesgo país ([ArgentinaDatos](https://argentinadatos.com/docs/)), pánico en la bolsa (VIX), caídas fuertes de la bolsa de EE.UU., Bitcoin u oro, ventas del plan que ya dan ganancia y trading arriba del tope. Las alertas graves aparecen arriba de todo.
 - **Contexto mundial y local**: se lee de `contexto.json` (se actualiza junto con la app).
 - El script (v5) agrega solo las filas `SPY` y `VIX` en Cotizaciones y trae el riesgo país.
-- **Te sobra este mes** (en Resumen), igual que la celda "Sobra" de la planilla mensual: pesos que tenés hoy (cuentas, efectivo y fondos en pesos) menos lo que falta pagar del mes. Lo que falta pagar suma los vencimientos pendientes hasta fin de mes y los gastos fijos (y resúmenes de tarjeta) del mes pasado que todavía no se cargaron este mes, estimados con el monto del mes pasado.
+- **Mi mes** (pantalla principal): la plata del mes actual, separada de inversiones y objetivos.
+  - Disponible para el resto del mes = pesos que tenés (cuentas, efectivo y fondos en pesos) − lo que falta pagar, igual que la celda "Sobra" de la planilla mensual. Muestra cuánto podés gastar por día y por semana.
+  - Los saldos se cargan a mano; desde la última actualización se descuentan los gastos (no con tarjeta) y pagos, y se suman los ingresos.
+  - Falta pagar: vencimientos hasta fin de mes, la **cuota de ahorro** del mes (suma de los aportes de los objetivos; se marca "✓ Separado") y los fijos del mes pasado que todavía no se cargaron (estimados; "✓ Pagado" abre el gasto ya completo).
+  - Tarjetas contra el tope, cuotas del mes y las que quedan, gastos de hoy / 7 días / mes y lo cobrado.
+- **Actualización automática**: al abrir o volver a la app se busca la versión nueva y la app se recarga sola. La versión se ve en Más.
+- El script v6 agrega solo cualquier columna nueva que mande la app, así no hace falta volver a actualizarlo.
 
