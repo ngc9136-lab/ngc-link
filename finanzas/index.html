@@ -515,8 +515,9 @@ function ahorroMensualPromedio(mov = movimientos()) {
 }
 /** FCI y dinero disponible: se valúan por el saldo que carga el usuario (sin cotización de mercado).
  *  En la hoja: cantidad = saldo actual; precioCompra = monto invertido (solo FCI); monedaCompra = moneda. */
-const esSaldo = inv => inv.tipo === 'fci' || inv.tipo === 'liquidez';
-const esMercado = v => !['fci', 'liquidez'].includes(v.tipo);
+const TIPOS_SALDO = ['fci', 'on', 'valuado', 'liquidez']; // se valúan por el saldo que carga el usuario
+const esSaldo = inv => TIPOS_SALDO.includes(inv.tipo);
+const esMercado = v => !TIPOS_SALDO.includes(v.tipo);
 /** Precio unitario actual de un activo en USD y ARS, con su fuente y frescura. */
 function precioActivo(inv) {
   const sym = String(inv.activo || '').toUpperCase().trim(); const R = dolar();
@@ -542,7 +543,7 @@ function valuarTenencias() {
     const valorUSD = q * p.usd, valorARS = q * p.ars;
     let costoUSD, costoARS;
     if (esSaldo(inv)) { // FCI: costo = monto invertido (total); cuenta: sin ganancia
-      const inv0 = inv.tipo === 'fci' && pc > 0 ? pc : q;
+      const inv0 = inv.tipo !== 'liquidez' && pc > 0 ? pc : q;
       if (inv.monedaCompra === 'USD') { costoUSD = inv0; costoARS = inv0 * (tc || R); } else { costoARS = inv0; costoUSD = R ? inv0 / R : 0; }
     } else if (inv.monedaCompra === 'ARS') { costoARS = q * pc; costoUSD = tc ? costoARS / tc : R ? costoARS / R : 0; }
     else { costoUSD = q * pc; costoARS = costoUSD * (tc || R); }
@@ -1246,7 +1247,7 @@ function renderInversiones() {
     ...Object.entries(q.mercado).map(([s, m]) => quoteBox(s, m.precio ? fmtMon(m.precio, m.moneda, m.moneda === 'USD' && m.precio >= 1000 ? 0 : undefined) : '—', m.ts, m.stale)),
   ];
   const dd = dineroDisponible();
-  const fcis = ten.filter(t => t.inv.tipo === 'fci');
+  const fcis = ten.filter(t => esSaldo(t.inv) && t.inv.tipo !== 'liquidez');
   const mercado = ten.filter(t => !esSaldo(t.inv) && t.inv.tipo !== 'efectivo');
   const monSaldo = i => (i.monedaCompra === 'USD' || String(i.activo).toUpperCase() === 'USD' ? 'USD' : 'ARS');
   const sinCotizAcciones = mercado.filter(t => t.p.sinCotiz && ['accion', 'etf', 'cedear'].includes(t.inv.tipo));
@@ -1262,8 +1263,8 @@ function renderInversiones() {
     </div>
     <div class="card"><h2>Dinero disponible<span class="sp"></span><span class="mid num">${fmtV(dd.ars)}</span></h2>
       <div class="list">${dd.items.map(i => `<button class="item" data-edit="Inversiones" data-id="${esc(i.id)}"><div class="main"><div class="t">${esc(i.activo)} <span class="tag">${esc(i.plataforma)}</span></div><div class="s">Actualizado ${fmtHora(i.actualizado)} · tocá para cambiar el saldo</div></div><div class="r"><div class="a num">${fmtMon(+i.cantidad, monSaldo(i))}</div></div></button>`).join('') || empty('Cargá cuánto tenés en cada cuenta y en efectivo con "+ Dinero disponible".')}</div></div>
-    <div class="card"><h2>FCI (fondos comunes)<span class="sp"></span><span class="mid num">${fmtV(sum(fcis, t => t.valorARS))}</span></h2>
-      <div class="list">${fcis.map(t => { const pct = t.plPctARS; return `<button class="item" data-edit="Inversiones" data-id="${esc(t.inv.id)}"><div class="main"><div class="t">${esc(t.inv.activo)} <span class="tag">${esc(t.inv.plataforma)}</span></div><div class="s">Pusiste ${fmtMon(+t.inv.precioCompra, t.inv.monedaCompra)} · actualizado ${fmtHora(t.inv.actualizado)}</div></div><div class="r"><div class="a num">${fmtMon(+t.inv.cantidad, t.inv.monedaCompra)}</div><div class="s num ${signo(pct)}">${mas(pct)}${fmtPct(pct)}</div>${pill(Sem.inversion(pct))}</div></button>`; }).join('') || empty('Cargá tus fondos comunes con "+ FCI".')}</div></div>
+    <div class="card"><h2>FCI, ONs y otros (valor a mano)<span class="sp"></span><span class="mid num">${fmtV(sum(fcis, t => t.valorARS))}</span></h2>
+      <div class="list">${fcis.map(t => { const pct = t.plPctARS; return `<button class="item" data-edit="Inversiones" data-id="${esc(t.inv.id)}"><div class="main"><div class="t">${esc(t.inv.activo)} <span class="tag">${esc(t.inv.plataforma)}</span></div><div class="s">${{ fci: 'FCI', on: 'ON', valuado: 'Valor a mano' }[t.inv.tipo] || ''} · pusiste ${fmtMon(+t.inv.precioCompra, t.inv.monedaCompra)} · actualizado ${fmtHora(t.inv.actualizado)}</div></div><div class="r"><div class="a num">${fmtMon(+t.inv.cantidad, t.inv.monedaCompra)}</div><div class="s num ${signo(pct)}">${mas(pct)}${fmtPct(pct)}</div>${pill(Sem.inversion(pct))}</div></button>`; }).join('') || empty('Cargá tus fondos comunes y ONs con "+ FCI".')}</div></div>
     <div class="card"><h2>Valor total (todo junto)<span class="sp"></span>${pill(nvInv)}</h2>
       <div class="big num">${fmtMon(tot.valorARS, 'ARS')}</div><div class="mid num txt2">${fmtMon(tot.valorUSD, 'USD')}</div>
       <div class="row2" style="margin-top:10px">
@@ -1492,14 +1493,14 @@ const FORMS = {
   Inversiones: {
     titulo: 'tenencia',
     campos: [
-      { n: 'tipo', l: '¿Qué querés cargar?', t: 'select', o: opts({ accion: 'Acción', cedear: 'CEDEAR', etf: 'ETF', cripto: 'Cripto', fci: 'FCI (fondo común de inversión)', liquidez: 'Dinero disponible (cuenta o efectivo)', otro: 'Otro' }) },
+      { n: 'tipo', l: '¿Qué querés cargar?', t: 'select', o: opts({ accion: 'Acción', cedear: 'CEDEAR', etf: 'ETF', cripto: 'Cripto', fci: 'FCI (fondo común de inversión)', on: 'ON (obligación negociable)', valuado: 'Otro (valor cargado a mano)', liquidez: 'Dinero disponible (cuenta o efectivo)', otro: 'Otro con cotización' }) },
       { n: 'activo', l: 'Activo (símbolo)', t: 'text', req: true, max: 20, patron: /^[A-Za-z0-9.\-_]+$/, ph: 'SPY, VOO, BTC…', mayus: true, show: v => esMercado(v) },
-      { n: 'nombre', l: 'Nombre', t: 'text', req: true, max: 40, ph: 'Ej.: Cuenta Galicia, Mercado Pago, FCI Cocos Ahorro', show: v => !esMercado(v) },
+      { n: 'nombre', l: 'Nombre', t: 'text', req: true, max: 40, ph: 'Ej.: Cuenta Galicia, FCI Cocos Ahorro, ON YPF', show: v => !esMercado(v) },
       { n: 'plataforma', l: 'Plataforma o banco', t: 'select', o: ['Cocos', 'IOL', 'Bull Market', 'eToro', 'Nexo', 'Galicia', 'HSBC', 'Mercado Pago', 'Naranja X', 'Lemon', 'Belo', 'AstroPay', 'Efectivo', 'Efectivo USD', 'Otra'].map(x => [x, x]), half: true },
       { n: 'monedaCompra', l: 'Moneda', t: 'select', o: opts({ ARS: 'Pesos', USD: 'Dólares' }), half: true },
       // Dinero disponible y FCI: se carga el saldo actual
       { n: 'saldo', l: 'Saldo actual', t: 'money', req: true, min: 0, show: v => !esMercado(v), help: 'Lo que ves hoy en la cuenta o en el fondo. Actualizalo cuando cambie.' },
-      { n: 'invertido', l: 'Monto que pusiste (opcional)', t: 'money', min: 0, show: v => v.tipo === 'fci', help: 'Sirve para calcular cuánto ganó el fondo.' },
+      { n: 'invertido', l: 'Monto que pusiste (opcional)', t: 'money', min: 0, show: v => !esMercado(v) && v.tipo !== 'liquidez', help: 'Sirve para calcular cuánto ganaste o perdiste.' },
       // Acciones, CEDEAR, ETF, cripto: por cantidad
       { n: 'cantidad', l: 'Cantidad que tenés', t: 'qty', req: true, min: 0.00000001, show: v => esMercado(v), help: 'Cantidad de acciones, cuotapartes o monedas.' },
       { n: 'modo', l: 'El precio lo cargo como…', t: 'select', o: opts({ unidad: 'Precio por unidad', total: 'Total que pagué' }), show: v => esMercado(v) },
@@ -1516,7 +1517,7 @@ const FORMS = {
     cargar(row) {
       const r = { ...row, modo: 'unidad' };
       if (row.tipo === 'efectivo') r.tipo = 'liquidez'; // tenencias viejas de efectivo
-      if (!esMercado(r)) { r.nombre = row.activo; r.saldo = row.cantidad; r.invertido = row.tipo === 'fci' ? row.precioCompra : ''; }
+      if (!esMercado(r)) { r.nombre = row.activo; r.saldo = row.cantidad; r.invertido = row.tipo !== 'liquidez' ? row.precioCompra : ''; }
       return r;
     },
     validar(v) {
@@ -1533,7 +1534,7 @@ const FORMS = {
     alGuardar(r) {
       if (!esMercado(r)) {
         r.activo = r.nombre; r.cantidad = r.saldo;
-        r.precioCompra = r.tipo === 'fci' ? (+r.invertido || r.saldo) : r.saldo;
+        r.precioCompra = r.tipo !== 'liquidez' ? (+r.invertido || r.saldo) : r.saldo;
         r.tcCompra = ''; r.fechaCompra = '';
       } else {
         if (r.modo === 'total') r.precioCompra = +r.montoTotal / +r.cantidad;
