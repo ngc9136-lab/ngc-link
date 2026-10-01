@@ -123,6 +123,7 @@ section.view{display:none} section.view.on{display:block}
 .item .a{font-weight:800;font-size:17px;overflow-wrap:anywhere}
 .pos{color:var(--ok-txt)} .neg{color:var(--bad-txt)}
 .tag{display:inline-block;font-size:11.5px;font-weight:700;border-radius:6px;padding:1px 6px;background:var(--card2);color:var(--txt2);margin-right:4px}
+.tag.ok{background:var(--ok-bg);color:var(--ok-txt)} .tag.warn{background:var(--warn-bg);color:var(--warn-txt)} .tag.bad{background:var(--bad-bg);color:var(--bad-txt)}
 .empty{color:var(--muted);text-align:center;padding:18px 8px}
 
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:50px;border-radius:14px;padding:0 18px;
@@ -315,7 +316,7 @@ const LS = {
   set(k, v) { try { localStorage.setItem('fin.' + k, JSON.stringify(v)); } catch (e) { toast('No se pudo guardar en el dispositivo: ' + e.message, 'bad'); } },
 };
 /** Versión mínima del script de Google que necesita esta app (ver apps-script/Code.gs). */
-const VERSION_SCRIPT_MIN = 3;
+const VERSION_SCRIPT_MIN = 4;
 const HOJAS = ['Ingresos', 'Gastos', 'Cuotas', 'Inversiones', 'Vencimientos', 'Objetivos', 'Historial'];
 const NUMERICOS = ['monto', 'montoCuota', 'cuotasTotales', 'cantidad', 'precioCompra', 'tcCompra', 'meta', 'saldoInicial', 'patrimonioARS', 'patrimonioUSD', 'dolar'];
 const TARJETAS = ['visa', 'mastercard'];
@@ -1273,10 +1274,11 @@ function renderInversiones() {
       <button class="btn" data-nueva-inv="liquidez">+ Dinero disponible</button>
       <button class="btn" data-nueva-inv="fci">+ FCI</button>
     </div>
+    ${cardPlanVenta()}
     <div class="card"><h2>Dinero disponible<span class="sp"></span><span class="mid num">${fmtV(dd.ars)}</span></h2>
       <div class="list">${dd.items.map(i => `<button class="item" data-edit="Inversiones" data-id="${esc(i.id)}"><div class="main"><div class="t">${esc(i.activo)} <span class="tag">${esc(i.plataforma)}</span></div><div class="s">Actualizado ${fmtHora(i.actualizado)} · tocá para cambiar el saldo</div></div><div class="r"><div class="a num">${fmtMon(+i.cantidad, monSaldo(i))}</div></div></button>`).join('') || empty('Cargá cuánto tenés en cada cuenta y en efectivo con "+ Dinero disponible".')}</div></div>
     <div class="card"><h2>FCI, ONs y otros (valor a mano)<span class="sp"></span><span class="mid num">${fmtV(sum(fcis, t => t.valorARS))}</span></h2>
-      <div class="list">${fcis.map(t => { const pct = t.plPctARS; return `<button class="item" data-edit="Inversiones" data-id="${esc(t.inv.id)}"><div class="main"><div class="t">${esc(t.inv.activo)} <span class="tag">${esc(t.inv.plataforma)}</span></div><div class="s">${{ fci: 'FCI', on: 'ON', valuado: 'Valor a mano' }[t.inv.tipo] || ''} · pusiste ${fmtMon(+t.inv.precioCompra, t.inv.monedaCompra)} · actualizado ${fmtHora(t.inv.actualizado)}</div></div><div class="r"><div class="a num">${fmtMon(+t.inv.cantidad, t.inv.monedaCompra)}</div><div class="s num ${signo(pct)}">${mas(pct)}${fmtPct(pct)}</div>${pill(Sem.inversion(pct))}</div></button>`; }).join('') || empty('Cargá tus fondos comunes y ONs con "+ FCI".')}</div></div>
+      <div class="list">${fcis.map(t => { const pct = t.plPctARS; return `<button class="item" data-edit="Inversiones" data-id="${esc(t.inv.id)}"><div class="main"><div class="t">${esc(t.inv.activo)} <span class="tag">${esc(t.inv.plataforma)}</span>${tagPlan(t)}</div><div class="s">${{ fci: 'FCI', on: 'ON', valuado: 'Valor a mano' }[t.inv.tipo] || ''} · pusiste ${fmtMon(+t.inv.precioCompra, t.inv.monedaCompra)} · actualizado ${fmtHora(t.inv.actualizado)}</div></div><div class="r"><div class="a num">${fmtMon(+t.inv.cantidad, t.inv.monedaCompra)}</div><div class="s num ${signo(pct)}">${mas(pct)}${fmtPct(pct)}</div>${pill(Sem.inversion(pct))}</div></button>`; }).join('') || empty('Cargá tus fondos comunes y ONs con "+ FCI".')}</div></div>
     <div class="card"><h2>Valor total (todo junto)<span class="sp"></span>${pill(nvInv)}</h2>
       <div class="big num">${fmtMon(tot.valorARS, 'ARS')}</div><div class="mid num txt2">${fmtMon(tot.valorUSD, 'USD')}</div>
       <div class="row2" style="margin-top:10px">
@@ -1289,7 +1291,7 @@ function renderInversiones() {
     <div class="card"><h2>Por activo<span class="sp"></span>${activos.length ? pill(Sem.btc(tot.btcPct), 'Banda de bitcoin') : ''}</h2>
       <div class="small muted" style="margin-bottom:6px">Bitcoin: ${fmtPct(tot.btcPct)} del patrimonio (banda ${U().btcMin}–${U().btcMax} %)</div>
       <div class="list">${activos.map(a => { const plA = vistaUSD() ? a.valorUSD - a.costoUSD : a.valorARS - a.costoARS; const base = vistaUSD() ? a.costoUSD : a.costoARS; const pctA = base ? plA / base * 100 : 0; return `<div class="item"><div class="main"><div class="t">${esc(a.k)}</div>${barra(a.peso, 'ok')}<div class="s">${fmtPct(a.peso)} del patrimonio</div></div><div class="r"><div class="a num">${fmtV(a.valorARS)}</div><div class="s num ${signo(plA)}">${mas(pctA)}${fmtPct(pctA)}</div>${a.k === 'BTC' ? pill(Sem.btc(tot.btcPct)) : pill(Sem.inversion(pctA))}</div></div>`; }).join('') || empty('Sin tenencias.')}</div></div>
-    <div class="card"><h2>Acciones, CEDEAR, ETF y cripto</h2><div class="list">${mercado.sort((a, b) => b.valorARS - a.valorARS).map(t => { const pct = vistaUSD() ? t.plPctUSD : t.plPctARS; return `<button class="item" data-edit="Inversiones" data-id="${esc(t.inv.id)}"><div class="main"><div class="t">${esc(t.inv.activo)} <span class="tag">${esc(t.inv.plataforma)}</span></div><div class="s">${fmtNum(+t.inv.cantidad, +t.inv.cantidad % 1 ? 6 : 0)} u. · compra ${fmtMon(+t.inv.precioCompra, t.inv.monedaCompra)} · ${t.p.sinCotiz ? '<span class="stale">sin cotización</span>' : `${t.p.fuente}${t.p.stale ? ' <span class="stale">⚠ desactualizado</span>' : ''}`}</div><div class="s num">G/P: <span class="${signo(t.plARS)}">${fmtMon(t.plARS, 'ARS')}</span> · <span class="${signo(t.plUSD)}">${fmtMon(t.plUSD, 'USD')}</span></div></div><div class="r"><div class="a num">${fmtV(t.valorARS)}</div><div class="s num ${signo(pct)}">${mas(pct)}${fmtPct(pct)}</div>${pill(Sem.inversion(pct))}</div></button>`; }).join('') || empty('Cargá tus acciones con "+ Acción / cripto".')}</div></div>
+    <div class="card"><h2>Acciones, CEDEAR, ETF y cripto</h2><div class="list">${mercado.sort((a, b) => b.valorARS - a.valorARS).map(t => { const pct = vistaUSD() ? t.plPctUSD : t.plPctARS; return `<button class="item" data-edit="Inversiones" data-id="${esc(t.inv.id)}"><div class="main"><div class="t">${esc(t.inv.activo)} <span class="tag">${esc(t.inv.plataforma)}</span>${tagPlan(t)}</div><div class="s">${fmtNum(+t.inv.cantidad, +t.inv.cantidad % 1 ? 6 : 0)} u. · compra ${fmtMon(+t.inv.precioCompra, t.inv.monedaCompra)} · ${t.p.sinCotiz ? '<span class="stale">sin cotización</span>' : `${t.p.fuente}${t.p.stale ? ' <span class="stale">⚠ desactualizado</span>' : ''}`}</div><div class="s num">G/P: <span class="${signo(t.plARS)}">${fmtMon(t.plARS, 'ARS')}</span> · <span class="${signo(t.plUSD)}">${fmtMon(t.plUSD, 'USD')}</span></div></div><div class="r"><div class="a num">${fmtV(t.valorARS)}</div><div class="s num ${signo(pct)}">${mas(pct)}${fmtPct(pct)}</div>${pill(Sem.inversion(pct))}</div></button>`; }).join('') || empty('Cargá tus acciones con "+ Acción / cripto".')}</div></div>
     ${simbolosGraf.length ? `<div class="card"><h2>Precio en el tiempo<span class="sp"></span><span id="hist-pill"></span></h2>
       <div class="field"><label for="hist-sym">Activo</label><select id="hist-sym">${simbolosGraf.map(x => `<option ${x === S.ui.histSym ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select></div>
       <div class="chart"><canvas id="c-hist" role="img" aria-label="Precio del activo en el tiempo"></canvas></div><div class="hint" id="hist-nota">Tocá el gráfico para ver el valor exacto.</div></div>` : ''}
@@ -1380,18 +1382,41 @@ const PROPOSITO_BALDE = {
 function selectBalde(attr, id, actual = '') {
   return `<select class="hsel" style="max-width:100%;height:44px" ${attr}="${esc(id)}" aria-label="Asignar a balde"><option value="">${actual ? 'Sin balde' : 'Asignar…'}</option>${BALDES.map(b => `<option value="${b.key}" ${actual === b.key ? 'selected' : ''}>${b.nombre}</option>`).join('')}</select>`;
 }
+/* Plan de venta: cada tenencia puede estar marcada para vender ('vender') o para esperar ('esperar').
+ * Las marcadas para vender se separan según su resultado de hoy: en ganancia → vender ya. */
+const enGanancia = t => (t.inv.monedaCompra === 'ARS' ? t.plARS : t.plUSD) >= 0;
+const pctPlan = t => (t.inv.monedaCompra === 'ARS' ? t.plPctARS : t.plPctUSD);
+function tagPlan(t) {
+  if (t.inv.plan === 'vender') return enGanancia(t) ? `<span class="tag ok">💰 Vender ya</span>` : `<span class="tag warn">Vender al recuperar</span>`;
+  if (t.inv.plan === 'esperar') return `<span class="tag">⏳ Esperar</span>`;
+  return '';
+}
+function cardPlanVenta() {
+  const ten = valuarTenencias().filter(t => t.inv.plan === 'vender' || t.inv.plan === 'esperar');
+  if (!ten.length) return '';
+  const ya = ten.filter(t => t.inv.plan === 'vender' && enGanancia(t)).sort((a, b) => b.valorARS - a.valorARS);
+  const luego = ten.filter(t => t.inv.plan === 'vender' && !enGanancia(t)).sort((a, b) => b.valorARS - a.valorARS);
+  const esperar = ten.filter(t => t.inv.plan === 'esperar');
+  const fila = t => `<button class="item" data-edit="Inversiones" data-id="${esc(t.inv.id)}"><div class="main"><div class="t">${esc(t.inv.activo)} <span class="tag">${esc(t.inv.plataforma || '')}</span></div><div class="s">${t.inv.notaPlan ? esc(t.inv.notaPlan) : ''}</div></div><div class="r"><div class="a num">${fmtV(t.valorARS)}</div><div class="s num ${signo(pctPlan(t))}">${mas(pctPlan(t))}${fmtPct(pctPlan(t), 1)}</div></div></button>`;
+  const bloque = (titulo, ayuda, xs) => xs.length ? `<h3 class="small" style="margin:12px 0 4px">${titulo} (${xs.length}) · ${fmtV(sum(xs, t => t.valorARS))}</h3><p class="small muted" style="margin:0 0 6px">${ayuda}</p><div class="list">${xs.map(fila).join('')}</div>` : '';
+  return `<div class="card"><h2>📋 Plan de venta</h2>
+    <p class="small muted" style="margin:-4px 0 0">Se actualiza con las cotizaciones. Cuando vendas, cambiá el saldo o la cantidad de la tenencia.</p>
+    ${bloque('💰 Vender ya: están en ganancia', 'Vendé y pasá la plata a donde dice abajo de cada una.', ya)}
+    ${bloque('Vender cuando recupere', 'Hoy dan pérdida: esperá a que vuelvan a cero o a ganancia.', luego)}
+    ${bloque('⏳ Esperar', 'No vender por ahora (por ejemplo, empresas en reestructuración).', esperar)}</div>`;
+}
 function renderObjetivos() {
   const bs = estadoBaldes();
   const sinAsignar = S.data.Ingresos.filter(i => i.tipo === 'variable' && !i.balde).sort((a, b) => (a.fecha < b.fecha ? 1 : -1)).slice(0, 15);
   const invSinBalde = valuarTenencias().filter(t => !t.inv.balde && t.valorARS > 0).sort((a, b) => b.valorARS - a.valorARS);
-  const filaActivo = t => `<div class="item"><div class="main"><div class="t">${esc(t.inv.activo)}</div><div class="s">${esc(t.inv.plataforma || '')}</div></div><div class="r"><div class="a num">${fmtV(t.valorARS)}</div></div></div>`;
+  const filaActivo = t => `<div class="item"><div class="main"><div class="t">${esc(t.inv.activo)} ${tagPlan(t)}</div><div class="s">${esc(t.inv.plataforma || '')}</div></div><div class="r"><div class="a num">${fmtV(t.valorARS)}</div></div></div>`;
   const textoMeta = b => b.tope ? `Tope (${U().tradeOk}% de lo invertido)` : `Meta${b.auto ? ` (auto: ${U().fondoOk} meses de gasto)` : ''}`;
   const detalle = b => {
     if (b.tope) return isFinite(b.pesoTotal) ? `Es el <b class="num">${fmtPct(b.pesoTotal, 1)}</b> de lo invertido · ${b.pesoTotal <= U().tradeOk ? 'dentro del tope' : `pasa el tope: bajalo a ${U().tradeOk}%`}` : 'Asigná acá tus activos para operar.';
     return `${isFinite(b.pct) ? `${fmtPct(b.pct, 0)} completado · ` : ''}${b.falta > 0 ? `Aporte sugerido: <b class="num">${fmtV(b.aporte)}</b>/mes durante ${b.mesesRest} meses` : b.meta > 0 ? '¡Meta cumplida!' : 'Definí una meta'}${b.key === 'emergencia' && isFinite(b.meses) ? ` · cubre ${fmtNum(b.meses, 1)} meses de gastos` : ''}`;
   };
   const scriptViejo = S.cfg.scriptUrl && (S.quotes.meta.scriptVersion || 1) < VERSION_SCRIPT_MIN;
-  $('#v-objetivos').innerHTML = (scriptViejo ? `<div class="banner warn"><span class="bi">!</span><div><b>Actualizá el script de Google</b> (una sola vez). Si no, el balde de cada inversión no se guarda en tu planilla y se pierde al sincronizar.</div></div>` : '') + bs.map(b => `
+  $('#v-objetivos').innerHTML = (scriptViejo ? `<div class="banner warn"><span class="bi">!</span><div><b>Actualizá el script de Google</b> (una sola vez). Si no, el balde y el plan de venta de cada inversión no se guardan en tu planilla y se pierden al sincronizar.</div></div>` : '') + cardPlanVenta() + bs.map(b => `
     <div class="card"><h2><span aria-hidden="true">${b.ico}</span>${b.nombre}<span class="sp"></span>${pill(b.nivel)}</h2>
       <p class="small muted" style="margin:-4px 0 10px">${PROPOSITO_BALDE[b.key] || ''}</p>
       <div class="row2"><div><div class="small muted">Saldo</div><div class="mid num">${fmtV(b.saldo)}</div></div><div><div class="small muted">${textoMeta(b)}</div><div class="mid num">${b.meta > 0 ? fmtV(b.meta) : '—'}</div></div></div>
@@ -1547,6 +1572,8 @@ const FORMS = {
       { n: 'tcCompra', l: 'Dólar al comprar (opcional)', t: 'money', min: 0, show: v => esMercado(v), help: 'Mejora el cálculo de ganancia en pesos. Vacío: usa el dólar actual.' },
       { n: 'fechaCompra', l: 'Fecha de compra (opcional)', t: 'date', show: v => esMercado(v) },
       { n: 'balde', l: 'Balde (objetivo)', t: 'select', o: [['', 'Sin balde'], ...BALDES.map(b => [b.key, b.nombre])], help: 'Su valor se suma a ese objetivo.' },
+      { n: 'plan', l: 'Plan', t: 'select', o: opts({ '': 'Mantener', vender: 'Vender (ya si da ganancia)', esperar: 'Esperar (no vender por ahora)' }), half: true },
+      { n: 'notaPlan', l: 'Nota del plan', t: 'text', max: 80, half: true, ph: 'Ej.: pasar a USDC', show: v => !!v.plan },
     ],
     // Pasa de la fila de la hoja a los campos del formulario
     cargar(row) {
