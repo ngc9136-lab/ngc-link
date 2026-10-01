@@ -321,7 +321,7 @@ const LS = {
 /** Versión mínima del script de Google que necesita esta app (ver apps-script/Code.gs). */
 const VERSION_SCRIPT_MIN = 5;
 /** Versión visible de la app (se ve en Más). Cambiarla junto con VERSION en sw.js. */
-const APP_VERSION = '2026-10-02';
+const APP_VERSION = '2026-10-02.2';
 const HOJAS = ['Ingresos', 'Gastos', 'Cuotas', 'Inversiones', 'Vencimientos', 'Objetivos', 'Historial'];
 const NUMERICOS = ['monto', 'montoCuota', 'cuotasTotales', 'cantidad', 'precioCompra', 'tcCompra', 'meta', 'saldoInicial', 'patrimonioARS', 'patrimonioUSD', 'dolar'];
 const TARJETAS = ['visa', 'mastercard'];
@@ -460,7 +460,7 @@ function vencimientosTodos() {
   const cur = mesActual();
   const agregar = (ref, base) => {
     const g = porRef.get(ref);
-    if (g) autos.push({ ...g, monto: g.estado === 'pagado' ? g.monto : base.monto, auto: true, detalle: base.detalle });
+    if (g) autos.push({ ...g, monto: g.estado === 'pagado' || g.editado === 'si' ? g.monto : base.monto, auto: true, detalle: base.detalle });
     else autos.push({ ...base, id: null, ref, estado: 'pendiente', auto: true });
   };
   for (const medio of TARJETAS) {
@@ -1135,6 +1135,13 @@ function renderMes() {
   const m = v => fmtMon(v, 'ARS');
   const keyV = v => (v.id ? `data-id="${esc(v.id)}"` : `data-ref="${esc(v.ref)}"`);
   const fila = (a, b, sub = '', extra = '') => `<div class="item"><div class="main"><div class="t" style="white-space:normal">${a}</div>${sub ? `<div class="s" style="white-space:normal">${sub}</div>` : ''}</div><div class="r"><div class="a num">${b}</div>${extra}</div></div>`;
+  const filaBtn = (attrs, a, b, sub = '', extra = '') => `<div class="item"><button class="main" style="text-align:left" ${attrs}><div class="t" style="white-space:normal">${a}</div>${sub ? `<div class="s" style="white-space:normal">${sub}</div>` : ''}</button><div class="r"><div class="a num">${b}</div>${extra}</div></div>`;
+  // Pagos ya hechos este mes: vencimientos marcados y gastos fijos/tarjeta cargados (se pueden deshacer o editar)
+  const pagosHechos = [
+    ...pagadosVenc.map(v => ({ fecha: v.fecha, html: filaBtn(`data-venc-edit ${keyV(v)}`, esc(v.concepto), fmtMon(+v.monto, v.moneda), `${fmtDM(v.fecha)} · ${v.origen === 'ahorro' ? 'Separado' : 'Pagado'} · tocá para editar`, `<button class="btn sm" data-despagar ${keyV(v)}>↩ Deshacer</button>`) })),
+    ...S.data.Gastos.filter(g => g.ambito !== 'negocio' && g.fecha.startsWith(cur) && (g.fijo === 'si' || g.categoria === 'Tarjeta de crédito'))
+      .map(g => ({ fecha: g.fecha, html: filaBtn(`data-edit="Gastos" data-id="${esc(g.id)}"`, esc(g.descripcion), fmtMon(+g.monto, g.moneda), `${fmtDM(g.fecha)} · ${esc(g.categoria)} · tocá para editar`, `<button class="btn sm" data-deshacer-gasto="${esc(g.id)}">↩ Deshacer</button>`) })),
+  ].sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
   const nombreMes = new Date(cur + '-15T12:00').toLocaleDateString('es-AR', { month: 'long' });
   const baldes = estadoBaldes(mov).filter(b => !b.tope && b.aporte > 0);
 
@@ -1156,9 +1163,13 @@ function renderMes() {
     </div>
 
     <div class="card"><h2>⏳ Falta pagar este mes<span class="sp"></span><span class="mid num">${m(pe.total)}</span></h2>
-      <div class="list">${pe.items.map(i => fila(esc(i.concepto), m(i.ars), `${fmtDM(i.fecha)} · ${i.origen}`,
+      <div class="list">${pe.items.map(i => filaBtn(i.venc ? `data-venc-edit ${keyV(i.venc)}` : `data-pagar-fijo="${esc(i.k)}"`, esc(i.concepto), m(i.ars), `${fmtDM(i.fecha)} · ${i.origen} · ${i.venc ? 'tocá para editar' : 'tocá para cargar el pago'}`,
         i.venc ? `<button class="btn sm okb" data-pagar ${keyV(i.venc)}>${i.venc.origen === 'ahorro' ? '✓ Separado' : '✓ Pagado'}</button>` : `<button class="btn sm okb" data-pagar-fijo="${esc(i.k)}">✓ Pagado</button>`)).join('') || empty('No falta pagar nada este mes. 🎉')}</div>
       <p class="small muted" style="margin:8px 0 0">Los fijos se estiman con lo que pagaste el mes pasado. "✓ Pagado" abre el gasto con ese monto para que lo confirmes o lo corrijas.</p></div>
+
+    <div class="card"><h2>✔️ Ya pagado este mes (${pagosHechos.length})</h2>
+      <div class="list">${pagosHechos.map(x => x.html).join('') || empty('Todavía no marcaste pagos este mes.')}</div>
+      <p class="small muted" style="margin:8px 0 0">¿Lo marcaste por error? Tocá "↩ Deshacer" y vuelve a "Falta pagar". Tocá el nombre para cambiar monto o fecha.</p></div>
 
     <div class="card"><h2>🐷 Cuota de ahorro del mes${ahorro ? `<span class="sp"></span>${pill(ahorro.estado === 'pagado' ? 'ok' : ahorro.fecha < hoyS ? 'bad' : 'warn')}` : ''}</h2>
       ${ahorro && +ahorro.monto > 0 ? `<div class="big num">${m(+ahorro.monto)}</div><div class="small muted">${ahorro.estado === 'pagado' ? 'Ya la separaste este mes. ¡Bien!' : `Separala apenas cobres (antes del ${fmtDM(ahorro.fecha)}) y tocá "✓ Separado" arriba.`}</div>
@@ -2016,11 +2027,14 @@ document.addEventListener('click', e => {
   if (ds.periodoMes) { S.ui.periodoMes = ds.periodoMes; renderTodo(); return; }
   if (ds.pagarFijo !== undefined) { const it = pendienteDelMes().items.find(x => x.k === ds.pagarFijo); if (it) abrirForm('Gastos', null, { vals: { ...it.gasto, fecha: hoy() }, titulo: 'gasto (confirmá el monto)' }); return; }
   if ('pagar' in ds) { const v = buscarVenc(t); if (v) marcarVenc(v, 'pagado'); return; }
+  if (ds.deshacerGasto) { const g = S.data.Gastos.find(x => x.id === ds.deshacerGasto); if (g && confirm(`¿Deshacer el pago "${g.descripcion}" (${fmtMon(+g.monto, g.moneda)})? Vuelve a la lista de pendientes.`)) { borrarFila('Gastos', g.id); toast('Pago deshecho', 'ok', 2200); } return; }
   if ('despagar' in ds) { const v = buscarVenc(t); if (v) marcarVenc(v, 'pendiente'); return; }
   if ('vencEdit' in ds) {
     const v = buscarVenc(t); if (!v) return;
-    if (v.id) abrirForm('Vencimientos', S.data.Vencimientos.find(x => x.id === v.id));
-    else toast('Este vencimiento se calcula solo. Marcalo como pagado o cambiá los días de cierre en Ajustes.', 'info');
+    // Los automáticos (tarjeta, cuota de ahorro, cuotas) también se pueden editar: se guarda una copia con el monto y la fecha que pongas
+    const fijos = v.ref ? { ref: v.ref, origen: v.origen, editado: 'si' } : undefined;
+    if (v.id) abrirForm('Vencimientos', S.data.Vencimientos.find(x => x.id === v.id), fijos ? { fijos } : {});
+    else abrirForm('Vencimientos', null, { vals: { concepto: v.concepto, monto: v.monto, moneda: v.moneda, fecha: v.fecha, medio: v.medio, estado: v.estado }, fijos, titulo: 'vencimiento (monto y fecha)' });
     return;
   }
   if (ds.devolver) { const g = S.data.Gastos.find(x => x.id === ds.devolver); if (g) { guardarFila('Gastos', { ...g, devuelto: 'si', fechaDevolucion: hoy() }); toast('Marcado como devuelto ✓', 'ok', 2200); } return; }
