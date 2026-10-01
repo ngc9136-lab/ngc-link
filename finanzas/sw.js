@@ -2,9 +2,9 @@
  * - Guarda en caché la app (HTML, manifest, íconos) y Chart.js para abrirla sin conexión.
  * - Las llamadas al script de Google y a las APIs de cotizaciones NO se cachean acá:
  *   la app guarda sus propios datos y los últimos valores en el dispositivo.
- * Cambiá VERSION cuando publiques una versión nueva para forzar la actualización.
+ * Cambiá VERSION cuando publiques una versión nueva: la app se actualiza y se recarga sola.
  */
-const VERSION = 'finanzas-v11';
+const VERSION = 'finanzas-v12';
 const CHART_URL = 'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/maskable-512.png', './icons/apple-touch-icon.png'];
 
@@ -35,7 +35,7 @@ self.addEventListener('fetch', event => {
     event.respondWith((async () => {
       const cache = await caches.open(VERSION);
       try {
-        const res = await fetch(req);
+        const res = await fetch(req, { cache: 'no-store' }); // siempre la versión publicada, sin la caché del navegador
         if (res.ok) cache.put(req, res.clone());
         return res;
       } catch (e) {

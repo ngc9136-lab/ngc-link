@@ -145,6 +145,7 @@ section.view{display:none} section.view.on{display:block}
 .banner.info{background:rgba(57,135,229,.14);border-color:var(--acc);color:#d6e7ff}
 .banner.ok{background:var(--ok-bg);border-color:var(--ok);color:#dcf7dc}
 .banner b{font-weight:800}
+.linkbtn{background:none;border:0;padding:0;color:var(--acc);font:inherit;text-decoration:underline;cursor:pointer}
 .banner .bi{font-size:20px;line-height:1}
 .banner button{text-decoration:underline;font-weight:800}
 
@@ -218,6 +219,7 @@ details.card>summary::after{content:" ▾";color:var(--muted)}
 </header>
 
 <main id="main">
+  <section class="view" id="v-mes"></section>
   <section class="view" id="v-resumen"></section>
   <section class="view" id="v-ingresos"></section>
   <section class="view" id="v-gastos"></section>
@@ -318,6 +320,8 @@ const LS = {
 };
 /** Versión mínima del script de Google que necesita esta app (ver apps-script/Code.gs). */
 const VERSION_SCRIPT_MIN = 5;
+/** Versión visible de la app (se ve en Más). Cambiarla junto con VERSION en sw.js. */
+const APP_VERSION = '2026-10-02';
 const HOJAS = ['Ingresos', 'Gastos', 'Cuotas', 'Inversiones', 'Vencimientos', 'Objetivos', 'Historial'];
 const NUMERICOS = ['monto', 'montoCuota', 'cuotasTotales', 'cantidad', 'precioCompra', 'tcCompra', 'meta', 'saldoInicial', 'patrimonioARS', 'patrimonioUSD', 'dolar'];
 const TARJETAS = ['visa', 'mastercard'];
@@ -336,7 +340,7 @@ const CRIPTO_EXTRA = { XRP: 'ripple', NEXO: 'nexo', XLM: 'stellar', SOL: 'solana
 const ESTABLES_USD = ['USDX'];
 
 const DEFAULT_CFG = {
-  scriptUrl: '', token: '', dolarTipo: 'mep', vista: 'ARS', presupuesto: 0, disponibleTarjetas: 0, mesesObjetivo: 12, topeTarjetas: 0,
+  scriptUrl: '', token: '', dolarTipo: 'mep', vista: 'ARS', presupuesto: 0, disponibleTarjetas: 0, mesesObjetivo: 12, topeTarjetas: 0, diaAhorro: 5,
   tarjetas: { visa: { cierre: 25, venc: 5 }, mastercard: { cierre: 25, venc: 5 } },
   umbrales: {
     ahorroOk: 20, ahorroAt: 10, gastoOk: 80, gastoAt: 100, cobOk: 110, cobAt: 100, invAt: 5,
@@ -358,7 +362,7 @@ const S = {
   contexto: LS.get('contexto', null), // contexto mundial y local (contexto.json)
   lastSync: LS.get('lastSync', null),
   sync: { estado: 'idle', error: '' },
-  ui: { tab: 'resumen', periodo: 'mes', mesIng: mesActual(), mesGas: mesActual(), vistaGastos: 'todos', filtroVenc: 'pendientes' },
+  ui: { tab: 'mes', periodoMes: 'mes', periodo: 'mes', mesIng: mesActual(), mesGas: mesActual(), vistaGastos: 'todos', filtroVenc: 'pendientes' },
 };
 const guardarDatos = () => { LS.set('data', S.data); LS.set('queue', S.queue); };
 const guardarCfg = () => LS.set('cfg', S.cfg);
@@ -469,6 +473,9 @@ function vencimientosTodos() {
         detalle: `${r.nGastos} compra(s) y ${r.nCuotas} cuota(s) · cierre ${fmtDM(r.hasta)}` });
     }
   }
+  // Cuota de ahorro del mes: lo que hay que separar para llegar a los objetivos
+  const ahorroIdeal = cuotaAhorroMes();
+  if (ahorroIdeal > 0 || porRef.has(`ahorro:${cur}`)) agregar(`ahorro:${cur}`, { concepto: 'Cuota de ahorro (separar para objetivos)', monto: Math.round(ahorroIdeal), moneda: 'ARS', fecha: dateInMonth(cur, +S.cfg.diaAhorro || 5), medio: 'transferencia', origen: 'ahorro', detalle: 'Pasala a dólares o al fondo de cada objetivo' });
   for (const c of S.data.Cuotas.filter(c => !TARJETAS.includes(c.medio))) {
     const inf = infoCuota(c);
     for (const off of [-1, 0, 1]) {
@@ -916,6 +923,7 @@ function toast(msg, tipo = 'info', ms = 5000) {
 }
 const svg = d => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 const ICO = {
+  mes: svg('<rect x="3" y="6" width="18" height="14" rx="2"/><path d="M3 10h18"/><circle cx="16" cy="15" r="1.5"/><path d="M7 3h10"/>'),
   resumen: svg('<path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/><path d="M10 20v-6h4v6"/>'),
   ingresos: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v10M8 13l4 4 4-4"/>'),
   gastos: svg('<circle cx="12" cy="12" r="9"/><path d="M12 17V7M8 11l4-4 4 4"/>'),
@@ -931,17 +939,17 @@ const ICO = {
    13. NAVEGACIÓN
    ===================================================================== */
 const TABS = {
-  resumen: 'Resumen', ingresos: 'Ingresos', gastos: 'Gastos', cuotas: 'Cuotas', inversiones: 'Inversiones',
+  mes: 'Mi mes', resumen: 'Resumen', ingresos: 'Ingresos', gastos: 'Gastos', cuotas: 'Cuotas', inversiones: 'Inversiones',
   vencimientos: 'Vencimientos', objetivos: 'Objetivos', ajustes: 'Ajustes', mas: 'Más',
 };
-const NAV = ['resumen', 'ingresos', 'gastos', 'vencimientos', 'mas'];
-const EN_MAS = ['cuotas', 'inversiones', 'objetivos', 'ajustes'];
-const FAB_HOJA = { ingresos: 'Ingresos', gastos: 'Gastos', cuotas: 'Cuotas', inversiones: 'Inversiones', vencimientos: 'Vencimientos' };
+const NAV = ['mes', 'resumen', 'gastos', 'ingresos', 'mas'];
+const EN_MAS = ['vencimientos', 'cuotas', 'inversiones', 'objetivos', 'ajustes'];
+const FAB_HOJA = { mes: 'Gastos', ingresos: 'Ingresos', gastos: 'Gastos', cuotas: 'Cuotas', inversiones: 'Inversiones', vencimientos: 'Vencimientos' };
 function renderNav() {
   const cant = vencimientosTodos().filter(v => v.estado !== 'pagado' && Sem.venc(v) === 'bad').length;
   $('#nav').innerHTML = NAV.map(t => {
     const activo = t === S.ui.tab || (t === 'mas' && EN_MAS.includes(S.ui.tab));
-    const badge = t === 'vencimientos' && cant ? `<span class="badge" aria-label="${cant} urgentes">${cant}</span>` : '';
+    const badge = t === 'mes' && cant ? `<span class="badge" aria-label="${cant} urgentes">${cant}</span>` : '';
     return `<button data-tab="${t}" ${activo ? 'aria-current="page"' : ''}>${ICO[t]}<span>${TABS[t] === 'Vencimientos' ? 'Vencim.' : TABS[t]}</span>${badge}</button>`;
   }).join('');
 }
@@ -974,7 +982,7 @@ function renderHeader() {
 }
 function renderTodo() {
   renderHeader(); renderSync(); renderNav();
-  const r = { resumen: renderResumen, ingresos: renderIngresos, gastos: renderGastos, cuotas: renderCuotas, inversiones: renderInversiones, vencimientos: renderVencimientos, objetivos: renderObjetivos, ajustes: renderAjustes, mas: renderMas }[S.ui.tab];
+  const r = { mes: renderMes, resumen: renderResumen, ingresos: renderIngresos, gastos: renderGastos, cuotas: renderCuotas, inversiones: renderInversiones, vencimientos: renderVencimientos, objetivos: renderObjetivos, ajustes: renderAjustes, mas: renderMas }[S.ui.tab];
   try { r(); } catch (e) { console.error(e); $('#v-' + S.ui.tab).innerHTML = `<div class="banner bad"><span class="bi">✕</span><div>Error al mostrar esta pantalla: ${esc(e.message)}</div></div>`; }
 }
 const empty = txt => `<div class="empty">${txt}</div>`;
@@ -985,7 +993,7 @@ const mas = n => (n > 0 ? '+' : '');
 function quoteBox(nombre, valor, ts, stale) {
   return `<div class="q"><div class="qn">${nombre}</div><div class="qv num">${valor}</div><div class="qt">${stale ? '<span class="stale">⚠ desactualizado</span> · ' : ''}act. ${fmtHora(ts)}</div></div>`;
 }
-function bannersAlerta() {
+function bannersAlerta(conMercado = true) {
   let h = '';
   const vs = vencimientosTodos().filter(v => v.estado !== 'pagado');
   const criticos = vs.filter(v => diffDays(hoy(), v.fecha) <= 2);
@@ -1001,7 +1009,7 @@ function bannersAlerta() {
     if (pct > 100) h += `<div class="banner bad" role="alert"><span class="bi">💳</span><div><b>Pasaste el tope de tarjetas del mes:</b> ${fmtV(g)} de ${fmtV(topeT)}. Frená las compras con tarjeta hasta el mes que viene.</div></div>`;
     else if (pct >= 80) h += `<div class="banner warn"><span class="bi">💳</span><div><b>Tarjetas al ${fmtPct(pct, 0)} del tope del mes</b> (${fmtV(g)} de ${fmtV(topeT)}).</div></div>`;
   }
-  const graves = alertasMercado().filter(a => a.nivel === 'bad');
+  const graves = conMercado ? alertasMercado().filter(a => a.nivel === 'bad') : [];
   if (graves.length) h += `<div class="banner bad" role="alert"><span class="bi">${graves[0].ico}</span><div><b>${esc(graves[0].titulo)}</b>${graves.length > 1 ? ` (y ${graves.length - 1} más)` : ''}. Mirá "Alertas y oportunidades" más abajo.</div></div>`;
   return h;
 }
@@ -1040,46 +1048,136 @@ function cardPlanMensual(mov = movimientos()) {
       ${vac && vac.meta > 0 ? fila('Presupuesto máximo de vacaciones', fmtV(vac.meta), `Lo que juntes en el balde hasta ${vac.row.fechaMeta ? fmtFecha(vac.row.fechaMeta) : 'la fecha'}; no lo pagues con tarjeta en cuotas`) : ''}
     </div>${topeT > 0 ? barra(pctT, nivT) : ''}</div>`;
 }
+/** Ahorro ideal del mes en pesos: suma de los aportes que necesita cada objetivo (sin trading). */
+let _cuotaAhorroCache = null;
+function cuotaAhorroMes() {
+  const clave = S.data.Objetivos.length + ':' + S.data.Inversiones.length + ':' + S.data.Gastos.length + ':' + S.data.Ingresos.length + ':' + dolar() + ':' + mesActual();
+  if (_cuotaAhorroCache && _cuotaAhorroCache.clave === clave) return _cuotaAhorroCache.v;
+  let v = 0;
+  try { v = sum(estadoBaldes().filter(b => !b.tope && b.meta > 0), b => b.aporte || 0); } catch (e) { v = 0; }
+  _cuotaAhorroCache = { clave, v };
+  return v;
+}
 /* ---------- "Te sobra este mes" (como la celda Sobra de la planilla: Tengo − Pendiente) ---------- */
 const normTexto = t => String(t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
-/** Pesos que tenés hoy para gastar: cuentas, efectivo y fondos en pesos (sin los dólares, que son ahorro). */
+/** Pesos para gastar este mes: cuentas, efectivo y fondos en pesos (sin los dólares, que son ahorro).
+ *  Como los saldos se cargan a mano, se descuentan los gastos (no con tarjeta) y pagos marcados
+ *  después de la última actualización de saldos, y se suman los ingresos cargados después. */
 function pesosDisponibles() {
-  const items = S.data.Inversiones.filter(i => ['liquidez', 'efectivo', 'fci'].includes(i.tipo) && i.monedaCompra !== 'USD' && String(i.activo).toUpperCase() !== 'USD' && +i.cantidad > 0);
-  return { items, total: sum(items, i => +i.cantidad) };
+  const items = S.data.Inversiones.filter(i => ['liquidez', 'efectivo', 'fci'].includes(i.tipo) && i.monedaCompra !== 'USD' && String(i.activo).toUpperCase() !== 'USD');
+  const cargado = sum(items, i => +i.cantidad || 0);
+  const ref = items.map(i => i.actualizado || '').sort().pop() || '';
+  const despues = r => !!ref && (r.actualizado || '') > ref;
+  const inicioMes = mesActual() + '-01';
+  const gastos = S.data.Gastos.filter(g => g.ambito !== 'negocio' && !TARJETAS.includes(g.medio) && despues(g) && g.fecha >= inicioMes);
+  const ingresos = S.data.Ingresos.filter(i => despues(i) && i.fecha >= inicioMes);
+  const nombresGastos = new Set(gastos.map(g => normTexto(g.descripcion)));
+  const pagos = S.data.Vencimientos.filter(v => v.estado === 'pagado' && despues(v) && v.origen !== 'ahorro' && !nombresGastos.has(normTexto(v.concepto)));
+  const menos = sum(gastos, g => toARS(g.monto, g.moneda)) + sum(pagos, v => toARS(v.monto, v.moneda));
+  const mas = sum(ingresos, i => toARS(i.monto, i.moneda));
+  return { items, cargado, ref, menos, mas, total: cargado - menos + mas };
 }
-/** Lo que falta pagar del mes: vencimientos pendientes hasta fin de mes y gastos fijos (o resúmenes de tarjeta)
- *  del mes pasado que todavía no cargaste este mes, estimados con el monto del mes pasado. */
-function pendienteDelMes(mov = movimientos()) {
-  const cur = mesActual(), fin = addDays(addMonths(cur, 1) + '-01', -1), prev = addMonths(cur, -1);
-  const pagados = new Set(mov.gastos.filter(g => g.personal && g.fecha.startsWith(cur)).map(g => normTexto(g.desc)));
+const finDeMes = () => addDays(addMonths(mesActual(), 1) + '-01', -1);
+/** Lo que falta pagar del mes: vencimientos pendientes hasta fin de mes (incluye la cuota de ahorro) y
+ *  gastos fijos o resúmenes de tarjeta del mes pasado que todavía no cargaste este mes (estimados). */
+function pendienteDelMes() {
+  const cur = mesActual(), fin = finDeMes(), prev = addMonths(cur, -1);
+  const pagados = new Set(S.data.Gastos.filter(g => g.ambito !== 'negocio' && g.fecha.startsWith(cur)).map(g => normTexto(g.descripcion)));
   const items = [];
   const venc = vencimientosTodos().filter(v => v.estado !== 'pagado' && v.fecha <= fin && +v.monto > 0);
-  for (const v of venc) items.push({ concepto: v.concepto, ars: toARS(v.monto, v.moneda), fecha: v.fecha, origen: v.fecha < hoy() ? 'Vencido' : 'Vencimiento' });
+  for (const v of venc) items.push({ concepto: v.concepto, ars: toARS(v.monto, v.moneda), fecha: v.fecha, origen: v.origen === 'ahorro' ? 'Ahorro' : v.origen === 'tarjeta' ? 'Tarjeta' : v.fecha < hoy() ? 'Vencido' : 'Vencimiento', venc: v });
   const hayResumenAuto = venc.some(v => v.origen === 'tarjeta');
   const yaEstan = new Set(items.map(i => normTexto(i.concepto)));
-  const vistos = new Set();
-  for (const g of mov.gastos.filter(g => g.personal && g.fecha.startsWith(prev) && g.cat !== 'Cuotas' && (g.fijo || g.cat === 'Tarjeta de crédito'))) {
-    const k = normTexto(g.desc);
+  const porClave = new Map();
+  for (const g of S.data.Gastos.filter(g => g.ambito !== 'negocio' && g.fecha.startsWith(prev) && (g.fijo === 'si' || g.categoria === 'Tarjeta de crédito'))) {
+    const k = normTexto(g.descripcion);
     if (!k || pagados.has(k) || yaEstan.has(k)) continue;
-    if (g.cat === 'Tarjeta de crédito' && hayResumenAuto) continue;
-    if (vistos.has(k)) { items.find(i => i.k === k).ars += g.ars; continue; }
-    vistos.add(k);
-    items.push({ k, concepto: g.desc, ars: g.ars, fecha: cur + g.fecha.slice(7), origen: 'Fijo (estimado)' });
+    if (g.categoria === 'Tarjeta de crédito' && hayResumenAuto) continue;
+    const ars = toARS(g.monto, g.moneda);
+    if (porClave.has(k)) { const it = porClave.get(k); it.ars += ars; it.gasto.monto += +g.monto; continue; }
+    const it = { k, concepto: g.descripcion, ars, fecha: cur + g.fecha.slice(7), origen: g.categoria === 'Tarjeta de crédito' ? 'Tarjeta (estimado)' : 'Fijo (estimado)',
+      gasto: { categoria: g.categoria, descripcion: g.descripcion, monto: +g.monto, moneda: g.moneda, medio: g.medio, fijo: g.fijo, ambito: 'personal', devuelto: 'no' } };
+    porClave.set(k, it); items.push(it);
   }
   items.sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
   return { items, total: sum(items, i => i.ars) };
 }
-function cardSobra(mov = movimientos()) {
-  const t = pesosDisponibles(), pe = pendienteDelMes(mov), sobra = t.total - pe.total;
-  if (!t.items.length && !pe.items.length) return '';
-  const nivel = sobra >= 0 ? 'ok' : 'bad';
-  const fila = (a, b, s = '') => `<div class="item"><div class="main"><div class="t">${esc(a)}</div>${s ? `<div class="s">${s}</div>` : ''}</div><div class="r"><div class="a num">${b}</div></div></div>`;
-  return `<div class="card"><h2>💵 ${sobra >= 0 ? 'Te sobra este mes' : 'Te falta este mes'}<span class="sp"></span>${pill(nivel)}</h2>
-    <div class="big num ${sobra >= 0 ? 'pos' : 'neg'}">${fmtMon(sobra, 'ARS')}</div>
-    <div class="small muted">${dolar() ? `≈ ${fmtMon(sobra / dolar(), 'USD')} · ` : ''}Tenés ${fmtMon(t.total, 'ARS')} en pesos − falta pagar ${fmtMon(pe.total, 'ARS')}</div>
-    <details style="margin-top:10px"><summary class="small">Tenés en pesos (${t.items.length})</summary><div class="list">${t.items.map(i => fila(i.activo, fmtMon(+i.cantidad, 'ARS'), esc(i.plataforma || ''))).join('') || empty('Cargá tus cuentas en pesos en Inversiones → + Dinero disponible.')}</div></details>
-    <details><summary class="small">Falta pagar (${pe.items.length})</summary><div class="list">${pe.items.map(i => fila(i.concepto, fmtMon(i.ars, 'ARS'), `${fmtDM(i.fecha)} · ${i.origen}`)).join('') || empty('No falta pagar nada este mes.')}</div>
-      <p class="small muted">Los fijos se estiman con lo que pagaste el mes pasado. Cuando cargues el gasto de este mes con el mismo nombre, sale de la lista.</p></details></div>`;
+/** Ingresos fijos del mes pasado que todavía no se cargaron este mes (lo que falta cobrar). */
+function faltaCobrar() {
+  const cur = mesActual(), prev = addMonths(cur, -1);
+  const este = new Set(S.data.Ingresos.filter(i => i.fecha.startsWith(cur)).map(i => normTexto(i.concepto)));
+  const items = S.data.Ingresos.filter(i => i.tipo === 'fijo' && i.fecha.startsWith(prev) && !este.has(normTexto(i.concepto)));
+  return { items, total: sum(items, i => toARS(i.monto, i.moneda)) };
+}
+
+/* =====================================================================
+   PESTAÑA MI MES: la plata del mes actual, separada de inversiones y objetivos
+   ===================================================================== */
+function renderMes() {
+  const mov = movimientos(), cur = mesActual(), hoyS = hoy(), fin = finDeMes();
+  const t = pesosDisponibles(), pe = pendienteDelMes(), fc = faltaCobrar();
+  const disponible = t.total - pe.total;
+  const diasRest = diffDays(hoyS, fin) + 1;
+  const porDia = disponible / diasRest, porSemana = porDia * Math.min(7, diasRest);
+  const p = S.ui.periodoMes;
+  const desde = p === 'hoy' ? hoyS : p === 'semana' ? addDays(hoyS, -6) : cur + '-01';
+  const gastosPer = S.data.Gastos.filter(g => g.ambito !== 'negocio' && g.fecha >= desde && g.fecha <= hoyS).sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
+  const gastadoPer = sum(gastosPer, g => toARS(g.monto, g.moneda));
+  const gastadoHoy = sum(S.data.Gastos.filter(g => g.ambito !== 'negocio' && g.fecha === hoyS), g => toARS(g.monto, g.moneda));
+  const ingresosMes = S.data.Ingresos.filter(i => i.fecha.startsWith(cur));
+  const todosV = vencimientosTodos();
+  const pagadosVenc = todosV.filter(v => v.estado === 'pagado' && v.fecha.startsWith(cur));
+  const ahorro = todosV.find(v => v.ref === `ahorro:${cur}`);
+  const cuotas = cuotasIndividuales().filter(c => c.c.ambito !== 'negocio');
+  const cuotasMes = cuotas.filter(c => c.ym === cur), cuotasRest = cuotas.filter(c => c.ym > cur);
+  const topeT = +S.cfg.topeTarjetas || 0, tj = tarjetasDelMes(mov);
+  const nivel = disponible < 0 ? 'bad' : porDia < 5000 ? 'warn' : 'ok';
+  const m = v => fmtMon(v, 'ARS');
+  const keyV = v => (v.id ? `data-id="${esc(v.id)}"` : `data-ref="${esc(v.ref)}"`);
+  const fila = (a, b, sub = '', extra = '') => `<div class="item"><div class="main"><div class="t" style="white-space:normal">${a}</div>${sub ? `<div class="s" style="white-space:normal">${sub}</div>` : ''}</div><div class="r"><div class="a num">${b}</div>${extra}</div></div>`;
+  const nombreMes = new Date(cur + '-15T12:00').toLocaleDateString('es-AR', { month: 'long' });
+  const baldes = estadoBaldes(mov).filter(b => !b.tope && b.aporte > 0);
+
+  $('#v-mes').innerHTML = `
+    ${bannersAlerta(false)}
+    <div class="card"><h2>💵 ${disponible >= 0 ? `Disponible para el resto de ${nombreMes}` : `Te falta plata en ${nombreMes}`}<span class="sp"></span>${pill(nivel)}</h2>
+      <div class="big num ${disponible >= 0 ? 'pos' : 'neg'}">${m(disponible)}</div>
+      <div class="small muted">Tenés ${m(t.total)} en pesos − falta pagar ${m(pe.total)}${dolar() ? ` · ≈ ${fmtMon(disponible / dolar(), 'USD')}` : ''}</div>
+      <div class="row2" style="margin-top:12px">
+        <div class="stat"><div class="l">Podés gastar por día</div><div class="v num">${m(Math.max(porDia, 0))}</div><div class="small muted">quedan ${diasRest} día(s)</div></div>
+        <div class="stat"><div class="l">Gastado hoy</div><div class="v num ${gastadoHoy > Math.max(porDia, 0) ? 'neg' : ''}">${m(gastadoHoy)}</div><div class="small muted">por semana: ${m(Math.max(porSemana, 0))}</div></div>
+      </div>
+      ${fc.total > 0 ? `<p class="small" style="margin:10px 0 0">Te falta cobrar ≈ ${m(fc.total)} (${fc.items.map(i => esc(i.concepto)).join(', ')}). Cuando cobres, cargalo en Ingresos.</p>` : ''}
+    </div>
+
+    <div class="card"><h2>🏦 Tus cuentas en pesos<span class="sp"></span><button class="btn sm" data-nueva-inv="liquidez">+ Cuenta</button></h2>
+      <div class="list">${t.items.map(i => `<button class="item" data-edit="Inversiones" data-id="${esc(i.id)}"><div class="main"><div class="t">${esc(i.activo)}</div><div class="s">${esc(i.plataforma || '')} · saldo del ${fmtHora(i.actualizado)} · tocá para actualizar</div></div><div class="r"><div class="a num">${m(+i.cantidad || 0)}</div></div></button>`).join('') || empty('Agregá tus cuentas en pesos (Galicia, Mercado Pago, efectivo…) con el botón + Cuenta.')}</div>
+      ${t.menos || t.mas ? `<p class="small muted" style="margin:8px 0 0">Desde la última actualización de saldos: −${m(t.menos)} en gastos y pagos, +${m(t.mas)} en ingresos. Saldo estimado: <b>${m(t.total)}</b>.</p>` : ''}
+    </div>
+
+    <div class="card"><h2>⏳ Falta pagar este mes<span class="sp"></span><span class="mid num">${m(pe.total)}</span></h2>
+      <div class="list">${pe.items.map(i => fila(esc(i.concepto), m(i.ars), `${fmtDM(i.fecha)} · ${i.origen}`,
+        i.venc ? `<button class="btn sm okb" data-pagar ${keyV(i.venc)}>${i.venc.origen === 'ahorro' ? '✓ Separado' : '✓ Pagado'}</button>` : `<button class="btn sm okb" data-pagar-fijo="${esc(i.k)}">✓ Pagado</button>`)).join('') || empty('No falta pagar nada este mes. 🎉')}</div>
+      <p class="small muted" style="margin:8px 0 0">Los fijos se estiman con lo que pagaste el mes pasado. "✓ Pagado" abre el gasto con ese monto para que lo confirmes o lo corrijas.</p></div>
+
+    <div class="card"><h2>🐷 Cuota de ahorro del mes${ahorro ? `<span class="sp"></span>${pill(ahorro.estado === 'pagado' ? 'ok' : ahorro.fecha < hoyS ? 'bad' : 'warn')}` : ''}</h2>
+      ${ahorro && +ahorro.monto > 0 ? `<div class="big num">${m(+ahorro.monto)}</div><div class="small muted">${ahorro.estado === 'pagado' ? 'Ya la separaste este mes. ¡Bien!' : `Separala apenas cobres (antes del ${fmtDM(ahorro.fecha)}) y tocá "✓ Separado" arriba.`}</div>
+        <div class="small" style="margin-top:6px">${baldes.map(b => `${b.ico} ${b.nombre}: ${m(b.aporte)}`).join(' · ')}</div>` : '<p class="small muted" style="margin:0">Definí las metas en Más → Objetivos para calcular cuánto separar por mes.</p>'}</div>
+
+    <div class="card"><h2>💳 Tarjetas y cuotas</h2><div class="list">
+      ${fila('Tarjetas este mes', topeT > 0 ? `${m(tj)} <span class="small muted">de ${m(topeT)}</span>` : m(tj), topeT > 0 ? `Te quedan ${m(Math.max(topeT - tj, 0))} del tope` : 'Poné un tope en Más → Ajustes')}
+      ${fila('Cuotas de este mes', m(sum(cuotasMes, c => c.ars)), cuotasMes.map(c => `${esc(c.c.descripcion)} ${c.n}/${c.N}`).join(' · ') || 'Sin cuotas este mes')}
+      ${fila('Cuotas que quedan', m(sum(cuotasRest, c => c.ars)), cuotasRest.length ? `${cuotasRest.length} cuota(s) · la última en ${fmtMesCorto(cuotasRest.map(c => c.ym).sort().pop())}` : 'No te quedan cuotas')}
+      </div>${topeT > 0 ? barra(tj / topeT * 100, tj > topeT ? 'bad' : tj >= topeT * 0.8 ? 'warn' : 'ok') : ''}</div>
+
+    <div class="seg" role="group" aria-label="Período">${[['hoy', 'Hoy'], ['semana', '7 días'], ['mes', 'Mes']].map(([v, tx]) => `<button data-periodo-mes="${v}" aria-pressed="${p === v}">${tx}</button>`).join('')}</div>
+    <div class="card"><h2>✅ Gastado y pagado · ${{ hoy: 'hoy', semana: '7 días', mes: nombreMes }[p]}<span class="sp"></span><span class="mid num">${m(gastadoPer)}</span></h2>
+      <div class="list">${gastosPer.slice(0, 40).map(g => `<button class="item" data-edit="Gastos" data-id="${esc(g.id)}"><div class="main"><div class="t">${esc(g.descripcion)}</div><div class="s">${fmtDM(g.fecha)} · ${esc(g.categoria)} · ${esc(MEDIOS[g.medio] || '')}</div></div><div class="r"><div class="a num">${fmtMon(+g.monto, g.moneda)}</div></div></button>`).join('') || empty('Todavía no cargaste gastos en este período.')}</div>
+      ${p === 'mes' && pagadosVenc.length ? `<p class="small muted" style="margin:8px 0 0">Vencimientos pagados: ${pagadosVenc.map(v => esc(v.concepto)).join(', ')}.</p>` : ''}</div>
+
+    <div class="card"><h2>⬇️ Cobrado este mes<span class="sp"></span><span class="mid num">${m(sum(ingresosMes, i => toARS(i.monto, i.moneda)))}</span></h2>
+      <div class="list">${ingresosMes.map(i => `<button class="item" data-edit="Ingresos" data-id="${esc(i.id)}"><div class="main"><div class="t">${esc(i.concepto)}</div><div class="s">${fmtDM(i.fecha)}</div></div><div class="r"><div class="a num">${fmtMon(+i.monto, i.moneda)}</div></div></button>`).join('') || empty('Todavía no cargaste ingresos este mes.')}</div></div>
+    <p class="small muted" style="text-align:center">Inversiones y objetivos están en Más. Esta pantalla es solo la plata del mes.</p>`;
 }
 /** Dinero disponible: cuentas y efectivo cargados en Inversiones como "Dinero disponible". */
 function dineroDisponible() {
@@ -1141,11 +1239,8 @@ function renderResumen() {
     <div class="seg" role="group" aria-label="Período">${[['hoy', 'Hoy'], ['semana', '7 días'], ['mes', 'Mes'], ['tres', '3 meses'], ['anio', 'Año']].map(([v, t]) => `<button data-periodo="${v}" aria-pressed="${S.ui.periodo === v}">${t}</button>`).join('')}</div>
     <div class="kpis" id="kpis"><div class="kpage">${k.slice(0, 4).join('')}</div><div class="kpage">${k.slice(4).join('')}</div></div>
     <div class="dots" aria-hidden="true"><span class="on"></span><span></span></div>
-    ${cardSobra(mov)}
     ${cardPlanMensual(mov)}
     ${cardAlertas()}
-    ${(() => { const dd = dineroDisponible(); return `<div class="card"><h2>Dinero disponible<span class="sp"></span><button class="btn sm" data-tab="inversiones">Ver y editar</button></h2>
-      <div class="big num">${fmtV(dd.ars)}</div><div class="small muted">${dd.items.length ? dd.items.map(i => `${esc(i.activo)}: ${fmtMon(+i.cantidad, i.monedaCompra === 'USD' || String(i.activo).toUpperCase() === 'USD' ? 'USD' : 'ARS')}`).join(' · ') : 'Todavía no cargaste cuentas ni efectivo.'}</div></div>`; })()}
     <div class="card"><h2>Dólar <span class="sp"></span><span class="small muted">convierte con ${DOLARES[S.cfg.dolarTipo]}</span></h2>
       <div class="quotes">${Object.entries(DOLARES).map(([kk, n]) => quoteBox(n, d[kk] ? fmtMon(d[kk].venta, 'ARS', 2) : '—', d[kk]?.ts, d[kk]?.stale)).join('')}</div></div>
     ${chartCard('c-diario', 'Gasto diario y acumulado vs. presupuesto', Sem.gasto(gasPct), 'tall')}
@@ -1433,7 +1528,7 @@ function renderInversiones() {
     ...[...new Set([...Object.keys(CRIPTO_IDS), ...ten.filter(t => t.inv.tipo === 'cripto').map(t => String(t.inv.activo).toUpperCase())])].filter(s => q.cripto[s]).map(s => quoteBox(s, q.cripto[s] ? fmtMon(q.cripto[s].usd, 'USD', q.cripto[s].usd >= 1000 ? 0 : q.cripto[s].usd < 10 ? 4 : 2) : '—', q.cripto[s]?.ts, q.cripto[s]?.stale)),
     ...Object.entries(q.mercado).map(([s, m]) => quoteBox(s, m.precio ? fmtMon(m.precio, m.moneda, m.moneda === 'USD' && m.precio >= 1000 ? 0 : undefined) : '—', m.ts, m.stale)),
   ];
-  const dd = dineroDisponible();
+  const dd0 = dineroDisponible(); const enUSD = x => x.monedaCompra === 'USD' || String(x.activo).toUpperCase() === 'USD'; const dd = { items: dd0.items.filter(enUSD), ars: sum(dd0.items.filter(enUSD), x => toARS(+x.cantidad, 'USD')) };
   const fcis = ten.filter(t => esSaldo(t.inv) && t.inv.tipo !== 'liquidez');
   const mercado = ten.filter(t => !esSaldo(t.inv) && t.inv.tipo !== 'efectivo');
   const monSaldo = i => (i.monedaCompra === 'USD' || String(i.activo).toUpperCase() === 'USD' ? 'USD' : 'ARS');
@@ -1449,7 +1544,8 @@ function renderInversiones() {
       <button class="btn" data-nueva-inv="fci">+ FCI</button>
     </div>
     ${cardPlanVenta()}
-    <div class="card"><h2>Dinero disponible<span class="sp"></span><span class="mid num">${fmtV(dd.ars)}</span></h2>
+    <div class="card"><h2>Dólares en cuentas<span class="sp"></span><span class="mid num">${fmtV(dd.ars)}</span></h2>
+      <p class="small muted" style="margin:-4px 0 8px">Las cuentas en pesos para gastar están en <button class="linkbtn" data-tab="mes">Mi mes</button>.</p>
       <div class="list">${dd.items.map(i => `<button class="item" data-edit="Inversiones" data-id="${esc(i.id)}"><div class="main"><div class="t">${esc(i.activo)} <span class="tag">${esc(i.plataforma)}</span></div><div class="s">Actualizado ${fmtHora(i.actualizado)} · tocá para cambiar el saldo</div></div><div class="r"><div class="a num">${fmtMon(+i.cantidad, monSaldo(i))}</div></div></button>`).join('') || empty('Cargá cuánto tenés en cada cuenta y en efectivo con "+ Dinero disponible".')}</div></div>
     <div class="card"><h2>FCI, ONs y otros (valor a mano)<span class="sp"></span><span class="mid num">${fmtV(sum(fcis, t => t.valorARS))}</span></h2>
       <div class="list">${fcis.map(t => { const pct = t.plPctARS; return `<button class="item" data-edit="Inversiones" data-id="${esc(t.inv.id)}"><div class="main"><div class="t">${esc(t.inv.activo)} <span class="tag">${esc(t.inv.plataforma)}</span>${tagPlan(t)}</div><div class="s">${{ fci: 'FCI', on: 'ON', valuado: 'Valor a mano' }[t.inv.tipo] || ''} · pusiste ${fmtMon(+t.inv.precioCompra, t.inv.monedaCompra)} · actualizado ${fmtHora(t.inv.actualizado)}</div></div><div class="r"><div class="a num">${fmtMon(+t.inv.cantidad, t.inv.monedaCompra)}</div><div class="s num ${signo(pct)}">${mas(pct)}${fmtPct(pct)}</div>${pill(Sem.inversion(pct))}</div></button>`; }).join('') || empty('Cargá tus fondos comunes y ONs con "+ FCI".')}</div></div>
@@ -1671,7 +1767,7 @@ function guardarAjustes(form) {
 }
 
 function renderMas() {
-  $('#v-mas').innerHTML = `<div class="menu-grid">${EN_MAS.map(t => `<button data-tab="${t}">${ICO[t]}${TABS[t]}</button>`).join('')}</div>`;
+  $('#v-mas').innerHTML = `<div class="menu-grid">${EN_MAS.map(t => `<button data-tab="${t}">${ICO[t]}${TABS[t]}</button>`).join('')}</div><p class="small muted" style="text-align:center;margin-top:16px">Versión ${APP_VERSION}</p>`;
 }
 
 /* =====================================================================
@@ -1917,6 +2013,8 @@ document.addEventListener('click', e => {
   if (ds.fv) { S.ui.filtroVenc = ds.fv; return renderTodo(); }
   if (ds.nuevaInv) { abrirForm('Inversiones', null, { vals: { tipo: ds.nuevaInv, plataforma: ds.nuevaInv === 'liquidez' ? 'Galicia' : 'Cocos', monedaCompra: ds.nuevaInv === 'accion' ? 'USD' : 'ARS' }, titulo: { accion: 'acción o cripto', liquidez: 'dinero disponible', fci: 'FCI' }[ds.nuevaInv] }); return; }
   if (ds.edit) { const row = S.data[ds.edit].find(r => r.id === ds.id); if (row) abrirForm(ds.edit, row); return; }
+  if (ds.periodoMes) { S.ui.periodoMes = ds.periodoMes; renderTodo(); return; }
+  if (ds.pagarFijo !== undefined) { const it = pendienteDelMes().items.find(x => x.k === ds.pagarFijo); if (it) abrirForm('Gastos', null, { vals: { ...it.gasto, fecha: hoy() }, titulo: 'gasto (confirmá el monto)' }); return; }
   if ('pagar' in ds) { const v = buscarVenc(t); if (v) marcarVenc(v, 'pagado'); return; }
   if ('despagar' in ds) { const v = buscarVenc(t); if (v) marcarVenc(v, 'pendiente'); return; }
   if ('vencEdit' in ds) {
@@ -2044,7 +2142,7 @@ async function importarDesdeEnlace() {
 }
 
 async function iniciar() {
-  irA('resumen');
+  irA('mes');
   setSync(S.cfg.scriptUrl ? (navigator.onLine ? 'idle' : 'offline') : 'local');
   await importarDesdeEnlace();
   renderTodo();
@@ -2053,7 +2151,16 @@ async function iniciar() {
   setInterval(() => actualizarCotizaciones(), 5 * 60 * 1000); // cotizaciones cada 5 minutos
   setInterval(() => { if (S.queue.length && navigator.onLine) sincronizar({ silencioso: true }); }, 60 * 1000); // reintento de la cola
   if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-    navigator.serviceWorker.register('sw.js').catch(err => console.warn('Service worker no registrado:', err));
+    // Actualización automática: el navegador busca una versión nueva al abrir y al volver a la app;
+    // cuando el service worker nuevo toma el control, la página se recarga sola (una vez).
+    const habiaControl = !!navigator.serviceWorker.controller;
+    let recargando = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => { if (habiaControl && !recargando) { recargando = true; location.reload(); } });
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => {
+      const buscar = () => reg.update().catch(() => {});
+      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') buscar(); });
+      setInterval(buscar, 30 * 60 * 1000);
+    }).catch(err => console.warn('Service worker no registrado:', err));
   }
 }
 iniciar();
