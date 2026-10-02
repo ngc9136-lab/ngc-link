@@ -325,7 +325,7 @@ const LS = {
 /** Versión mínima del script de Google que necesita esta app (ver apps-script/Code.gs). */
 const VERSION_SCRIPT_MIN = 5;
 /** Versión visible de la app (se ve en Más). Cambiarla junto con VERSION en sw.js. */
-const APP_VERSION = '2026-10-02.4';
+const APP_VERSION = '2026-10-02.5';
 const HOJAS = ['Ingresos', 'Gastos', 'Cuotas', 'Inversiones', 'Vencimientos', 'Objetivos', 'Historial'];
 const NUMERICOS = ['monto', 'montoCuota', 'cuotasTotales', 'cantidad', 'precioCompra', 'tcCompra', 'meta', 'saldoInicial', 'patrimonioARS', 'patrimonioUSD', 'dolar'];
 const TARJETAS = ['visa', 'mastercard'];
@@ -458,7 +458,7 @@ function resumenTarjeta(medio, ym) {
 }
 /** Vencimientos manuales + automáticos (resúmenes de tarjeta y cuotas fuera de tarjeta). */
 function vencimientosTodos() {
-  const guardados = S.data.Vencimientos;
+  const guardados = S.data.Vencimientos.filter(v => v.origen !== 'plantilla'); // las plantillas son el plan de pagos del mes
   const porRef = new Map(guardados.filter(v => v.ref).map(v => [v.ref, v]));
   const autos = [];
   const cur = mesActual();
@@ -1110,16 +1110,37 @@ function pesosDisponibles() {
   const cargado = sum(items, i => +i.cantidad || 0);
   const ref = items.map(i => i.actualizado || '').sort().pop() || '';
   const despues = r => !!ref && (r.actualizado || '') > ref;
-  const inicioMes = mesActual() + '-01';
+  // Solo cuentan los movimientos con fecha desde el día en que actualizaste los saldos
+  // (un gasto de días anteriores que cargás después ya estaba descontado en el saldo).
+  const diaRef = ref ? isoDate(new Date(ref)) : '';
+  const inicioMes = diaRef > mesActual() + '-01' ? diaRef : mesActual() + '-01';
   const gastos = S.data.Gastos.filter(g => g.ambito !== 'negocio' && !TARJETAS.includes(g.medio) && despues(g) && g.fecha >= inicioMes);
   const ingresos = S.data.Ingresos.filter(i => despues(i) && i.fecha >= inicioMes);
   const nombresGastos = new Set(gastos.map(g => normTexto(g.descripcion)));
-  const pagos = S.data.Vencimientos.filter(v => v.estado === 'pagado' && despues(v) && v.origen !== 'ahorro' && !nombresGastos.has(normTexto(v.concepto)));
+  const pagos = S.data.Vencimientos.filter(v => v.estado === 'pagado' && despues(v) && v.origen !== 'ahorro' && v.origen !== 'plantilla' && !nombresGastos.has(normTexto(v.concepto)));
   const menos = sum(gastos, g => toARS(g.monto, g.moneda)) + sum(pagos, v => toARS(v.monto, v.moneda));
   const mas = sum(ingresos, i => toARS(i.monto, i.moneda));
   return { items, cargado, ref, menos, mas, total: cargado - menos + mas };
 }
 const finDeMes = () => addDays(addMonths(mesActual(), 1) + '-01', -1);
+/* ---------- Plan de pagos del mes (como las columnas "Pagar" y "Pendiente" de la planilla) ----------
+ * Cada pago planificado se guarda en Vencimientos con origen "plantilla" (monto del mes y día).
+ * Lo pagado se toma de los gastos del mes con el mismo nombre (o categoría); falta = plan − pagado.
+ * "Comida" toma los gastos de Supermercado: lo que falta es lo que queda del presupuesto de comida. */
+function coincidePlan(g, k) {
+  const d = normTexto(g.descripcion), c = normTexto(g.categoria);
+  if (k === 'comida') return c === 'supermercado' || c === 'comida' || d.includes('comida');
+  return d === k || (k.length >= 3 && d.includes(k)) || c === k;
+}
+function planDePagos() {
+  const cur = mesActual();
+  const gastosMes = S.data.Gastos.filter(g => g.ambito !== 'negocio' && g.fecha.startsWith(cur));
+  return S.data.Vencimientos.filter(v => v.origen === 'plantilla').map(v => {
+    const k = normTexto(v.concepto), plan = toARS(+v.monto || 0, v.moneda || 'ARS');
+    const pagado = sum(gastosMes.filter(g => coincidePlan(g, k)), g => toARS(g.monto, g.moneda));
+    return { v, k, plan, pagado, falta: Math.max(0, plan - pagado), fecha: dateInMonth(cur, +String(v.fecha || '').slice(8, 10) || 10) };
+  }).sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
+}
 /** Lo que falta pagar del mes: vencimientos pendientes hasta fin de mes (incluye la cuota de ahorro) y
  *  gastos fijos o resúmenes de tarjeta del mes pasado que todavía no cargaste este mes (estimados). */
 function pendienteDelMes() {
@@ -1131,7 +1152,14 @@ function pendienteDelMes() {
   const hayResumenAuto = venc.some(v => v.origen === 'tarjeta');
   const yaEstan = new Set(items.map(i => normTexto(i.concepto)));
   const porClave = new Map();
-  for (const g of S.data.Gastos.filter(g => g.ambito !== 'negocio' && g.fecha.startsWith(prev) && (g.fijo === 'si' || g.categoria === 'Tarjeta de crédito'))) {
+  // Con plan de pagos cargado se usa el plan (con pagos parciales); si no, se estima con el mes pasado
+  const plan = planDePagos();
+  for (const p of plan) {
+    if (!(p.falta > 0)) continue;
+    items.push({ k: 'plan:' + p.v.id, concepto: p.v.concepto, ars: p.falta, fecha: p.fecha, origen: p.pagado > 0 ? `Plan · pagaste ${fmtMon(p.pagado, 'ARS')} de ${fmtMon(p.plan, 'ARS')}` : 'Plan',
+      gasto: { categoria: p.k === 'comida' ? 'Supermercado' : 'Otros', descripcion: p.v.concepto, monto: Math.round(p.falta), moneda: 'ARS', medio: p.v.medio || 'debito', fijo: p.k === 'comida' ? 'no' : 'si', ambito: 'personal', devuelto: 'no' } });
+  }
+  for (const g of plan.length ? [] : S.data.Gastos.filter(g => g.ambito !== 'negocio' && g.fecha.startsWith(prev) && (g.fijo === 'si' || g.categoria === 'Tarjeta de crédito'))) {
     const k = normTexto(g.descripcion);
     if (!k || pagados.has(k) || yaEstan.has(k)) continue;
     if (g.categoria === 'Tarjeta de crédito' && hayResumenAuto) continue;
@@ -1187,6 +1215,7 @@ function renderMes() {
     ...S.data.Gastos.filter(g => g.ambito !== 'negocio' && g.fecha.startsWith(cur) && (g.fijo === 'si' || g.categoria === 'Tarjeta de crédito'))
       .map(g => ({ fecha: g.fecha, html: filaBtn(`data-edit="Gastos" data-id="${esc(g.id)}"`, esc(g.descripcion), fmtMon(+g.monto, g.moneda), `${fmtDM(g.fecha)} · ${esc(g.categoria)} · tocá para editar`, `<button class="btn sm" data-deshacer-gasto="${esc(g.id)}">↩ Deshacer</button>`) })),
   ].sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
+  const planMes = planDePagos();
   const nombreMes = new Date(cur + '-15T12:00').toLocaleDateString('es-AR', { month: 'long' });
   const baldes = estadoBaldes(mov).filter(b => !b.tope && b.aporte > 0);
 
@@ -1219,6 +1248,12 @@ function renderMes() {
       <div class="list">${pe.items.map(i => filaBtn(i.venc ? `data-venc-edit ${keyV(i.venc)}` : `data-pagar-fijo="${esc(i.k)}"`, esc(i.concepto), m(i.ars), `${fmtDM(i.fecha)} · ${i.origen} · ${i.venc ? 'tocá para editar' : 'tocá para cargar el pago'}`,
         i.venc ? `<button class="btn sm okb" data-pagar ${keyV(i.venc)}>${i.venc.origen === 'ahorro' ? '✓ Separado' : '✓ Pagado'}</button>` : `<button class="btn sm okb" data-pagar-fijo="${esc(i.k)}">✓ Pagado</button>`)).join('') || empty('No falta pagar nada este mes. 🎉')}</div>
       <p class="small muted" style="margin:8px 0 0">Los fijos se estiman con lo que pagaste el mes pasado. "✓ Pagado" abre el gasto con ese monto para que lo confirmes o lo corrijas.</p></div>
+
+    <div class="card"><h2>📋 Plan de pagos del mes<span class="sp"></span><button class="btn sm" data-nuevo-plan>+ Pago</button></h2>
+      ${planMes.length ? `<div class="list">${planMes.map(x => filaBtn(`data-edit="Vencimientos" data-id="${esc(x.v.id)}"`, esc(x.v.concepto), x.falta > 0 ? m(x.falta) : '<span class="pos">✓</span>', `Plan ${m(x.plan)} · pagado ${m(x.pagado)} · día ${fmtDM(x.fecha)}`)).join('')}</div>
+        <div class="row2" style="margin-top:10px"><div class="stat"><div class="l">Plan del mes</div><div class="v num">${m(sum(planMes, x => x.plan))}</div></div><div class="stat"><div class="l">Falta pagar del plan</div><div class="v num">${m(sum(planMes, x => x.falta))}</div></div></div>
+        <p class="small muted" style="margin:8px 0 0">Como las columnas "Pagar" y "Pendiente" de tu planilla. Lo pagado sale de los gastos del mes con el mismo nombre ("Comida" toma Supermercado). Tocá un pago para cambiar el monto.</p>`
+        : '<p class="small muted" style="margin:0">Cargá tus pagos de todos los meses (alquiler, servicios, comida…) con "+ Pago". Mientras tanto se estiman con lo que pagaste el mes pasado.</p>'}</div>
 
     <div class="card"><h2>✔️ Ya pagado este mes (${pagosHechos.length})</h2>
       <div class="list">${pagosHechos.map(x => x.html).join('') || empty('Todavía no marcaste pagos este mes.')}</div>
@@ -2077,6 +2112,7 @@ document.addEventListener('click', e => {
   if (ds.fv) { S.ui.filtroVenc = ds.fv; return renderTodo(); }
   if (ds.nuevaInv) { abrirForm('Inversiones', null, { vals: { tipo: ds.nuevaInv, plataforma: ds.nuevaInv === 'liquidez' ? 'Galicia' : 'Cocos', monedaCompra: ds.nuevaInv === 'accion' ? 'USD' : 'ARS' }, titulo: { accion: 'acción o cripto', liquidez: 'dinero disponible', fci: 'FCI' }[ds.nuevaInv] }); return; }
   if (ds.edit) { const row = S.data[ds.edit].find(r => r.id === ds.id); if (row) abrirForm(ds.edit, row); return; }
+  if ('nuevoPlan' in ds) { abrirForm('Vencimientos', null, { fijos: { origen: 'plantilla', estado: 'pendiente' }, vals: { fecha: hoy(), medio: 'debito' }, titulo: 'pago del plan mensual (solo importa el día)' }); return; }
   if (ds.periodoMes) { S.ui.periodoMes = ds.periodoMes; renderTodo(); return; }
   if (ds.pagarFijo !== undefined) { const it = pendienteDelMes().items.find(x => x.k === ds.pagarFijo); if (it) abrirForm('Gastos', null, { vals: { ...it.gasto, fecha: hoy() }, titulo: 'gasto (confirmá el monto)' }); return; }
   if ('pagar' in ds) { const v = buscarVenc(t); if (v) marcarVenc(v, 'pagado'); return; }
