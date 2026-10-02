@@ -325,7 +325,7 @@ const LS = {
 /** Versión mínima del script de Google que necesita esta app (ver apps-script/Code.gs). */
 const VERSION_SCRIPT_MIN = 5;
 /** Versión visible de la app (se ve en Más). Cambiarla junto con VERSION en sw.js. */
-const APP_VERSION = '2026-10-02.3';
+const APP_VERSION = '2026-10-02.4';
 const HOJAS = ['Ingresos', 'Gastos', 'Cuotas', 'Inversiones', 'Vencimientos', 'Objetivos', 'Historial'];
 const NUMERICOS = ['monto', 'montoCuota', 'cuotasTotales', 'cantidad', 'precioCompra', 'tcCompra', 'meta', 'saldoInicial', 'patrimonioARS', 'patrimonioUSD', 'dolar'];
 const TARJETAS = ['visa', 'mastercard'];
@@ -1158,7 +1158,10 @@ function faltaCobrar() {
 function renderMes() {
   const mov = movimientos(), cur = mesActual(), hoyS = hoy(), fin = finDeMes();
   const t = pesosDisponibles(), pe = pendienteDelMes(), fc = faltaCobrar();
-  const disponible = t.total - pe.total;
+  const peSin = { items: pe.items.filter(i => i.origen !== 'Ahorro') }; peSin.total = sum(peSin.items, i => i.ars);
+  const ahorroPend = pe.total - peSin.total;
+  const sobra = t.total - peSin.total; // igual que la celda Sobra (F33) de la planilla
+  const disponible = sobra - ahorroPend; // después de separar la cuota de ahorro
   const diasRest = diffDays(hoyS, fin) + 1;
   const porDia = disponible / diasRest, porSemana = porDia * Math.min(7, diasRest);
   const p = S.ui.periodoMes;
@@ -1173,7 +1176,7 @@ function renderMes() {
   const cuotas = cuotasIndividuales().filter(c => c.c.ambito !== 'negocio');
   const cuotasMes = cuotas.filter(c => c.ym === cur), cuotasRest = cuotas.filter(c => c.ym > cur);
   const topeT = +S.cfg.topeTarjetas || 0, tj = tarjetasDelMes(mov);
-  const nivel = disponible < 0 ? 'bad' : porDia < 5000 ? 'warn' : 'ok';
+  const nivel = sobra < 0 ? 'bad' : disponible < 0 ? 'warn' : 'ok';
   const m = v => fmtMon(v, 'ARS');
   const keyV = v => (v.id ? `data-id="${esc(v.id)}"` : `data-ref="${esc(v.ref)}"`);
   const fila = (a, b, sub = '', extra = '') => `<div class="item"><div class="main"><div class="t" style="white-space:normal">${a}</div>${sub ? `<div class="s" style="white-space:normal">${sub}</div>` : ''}</div><div class="r"><div class="a num">${b}</div>${extra}</div></div>`;
@@ -1189,13 +1192,21 @@ function renderMes() {
 
   $('#v-mes').innerHTML = `
     ${bannersAlerta(false)}
-    <div class="card"><h2>💵 ${disponible >= 0 ? `Disponible para el resto de ${nombreMes}` : `Te falta plata en ${nombreMes}`}<span class="sp"></span>${pill(nivel)}</h2>
-      <div class="big num ${disponible >= 0 ? 'pos' : 'neg'}">${m(disponible)}</div>
-      <div class="small muted">Tenés ${m(t.total)} en pesos − falta pagar ${m(pe.total)}${dolar() ? ` · ≈ ${fmtMon(disponible / dolar(), 'USD')}` : ''}</div>
+    <div class="card"><h2>💵 Sobrante del mes<span class="sp"></span>${pill(nivel)}</h2>
+      <div class="small muted" style="margin:-4px 0 6px">Lo mismo que la celda "Sobra" (F33) de tu planilla: lo que tenés menos lo que falta pagar.</div>
+      <div class="big num ${sobra >= 0 ? 'pos' : 'neg'}">${m(sobra)}</div>
+      ${dolar() ? `<div class="small muted">≈ ${fmtMon(sobra / dolar(), 'USD')}</div>` : ''}
+      <div class="list" style="margin-top:8px">
+        ${fila('Tengo en pesos', m(t.total), t.items.length ? t.items.map(i => esc(i.activo)).join(' · ') : '<b>Cargá cuánto tenés hoy</b> en "Tus cuentas en pesos" (abajo)')}
+        ${fila('− Falta pagar este mes', m(peSin.total), `${peSin.items.length} pago(s) pendiente(s)`)}
+        ${fila('<b>= Sobra</b>', `<b class="${sobra >= 0 ? 'pos' : 'neg'}">${m(sobra)}</b>`)}
+      </div>
+      ${ahorroPend > 0 ? `<p class="small" style="margin:10px 0 0">🐷 Si además separás la cuota de ahorro (${m(ahorroPend)}), te quedan <b class="${disponible >= 0 ? 'pos' : 'neg'}">${m(disponible)}</b>.</p>` : ''}
       <div class="row2" style="margin-top:12px">
-        <div class="stat"><div class="l">Podés gastar por día</div><div class="v num">${m(Math.max(porDia, 0))}</div><div class="small muted">quedan ${diasRest} día(s)</div></div>
+        <div class="stat"><div class="l">Podés gastar por día</div><div class="v num">${m(Math.max(porDia, 0))}</div><div class="small muted">quedan ${diasRest} día(s)${ahorroPend > 0 ? ', ya separando el ahorro' : ''}</div></div>
         <div class="stat"><div class="l">Gastado hoy</div><div class="v num ${gastadoHoy > Math.max(porDia, 0) ? 'neg' : ''}">${m(gastadoHoy)}</div><div class="small muted">por semana: ${m(Math.max(porSemana, 0))}</div></div>
       </div>
+      ${!t.items.length ? '<div class="btns" style="margin-top:10px"><button class="btn pri" data-nueva-inv="liquidez">+ Cargar lo que tengo hoy</button></div>' : ''}
       ${fc.total > 0 ? `<p class="small" style="margin:10px 0 0">Te falta cobrar ≈ ${m(fc.total)} (${fc.items.map(i => esc(i.concepto)).join(', ')}). Cuando cobres, cargalo en Ingresos.</p>` : ''}
     </div>
 
