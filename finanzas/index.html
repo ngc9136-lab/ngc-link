@@ -325,7 +325,7 @@ const LS = {
 /** Versión mínima del script de Google que necesita esta app (ver apps-script/Code.gs). */
 const VERSION_SCRIPT_MIN = 5;
 /** Versión visible de la app (se ve en Más). Cambiarla junto con VERSION en sw.js. */
-const APP_VERSION = '2026-10-02.5';
+const APP_VERSION = '2026-10-02.6';
 const HOJAS = ['Ingresos', 'Gastos', 'Cuotas', 'Inversiones', 'Vencimientos', 'Objetivos', 'Historial'];
 const NUMERICOS = ['monto', 'montoCuota', 'cuotasTotales', 'cantidad', 'precioCompra', 'tcCompra', 'meta', 'saldoInicial', 'patrimonioARS', 'patrimonioUSD', 'dolar'];
 const TARJETAS = ['visa', 'mastercard'];
@@ -344,7 +344,7 @@ const CRIPTO_EXTRA = { XRP: 'ripple', NEXO: 'nexo', XLM: 'stellar', SOL: 'solana
 const ESTABLES_USD = ['USDX'];
 
 const DEFAULT_CFG = {
-  scriptUrl: '', token: '', dolarTipo: 'mep', vista: 'ARS', presupuesto: 0, disponibleTarjetas: 0, mesesObjetivo: 12, topeTarjetas: 0, diaAhorro: 5,
+  scriptUrl: '', token: '', dolarTipo: 'mep', vista: 'ARS', presupuesto: 0, disponibleTarjetas: 0, mesesObjetivo: 12, topeTarjetas: 0, diaAhorro: 5, diaCobro: 1,
   tarjetas: { visa: { cierre: 25, venc: 5 }, mastercard: { cierre: 25, venc: 5 } },
   umbrales: {
     ahorroOk: 20, ahorroAt: 10, gastoOk: 80, gastoAt: 100, cobOk: 110, cobAt: 100, invAt: 5,
@@ -479,7 +479,8 @@ function vencimientosTodos() {
   }
   // Cuota de ahorro del mes: lo que hay que separar para llegar a los objetivos
   const ahorroIdeal = cuotaAhorroMes();
-  if (ahorroIdeal > 0 || porRef.has(`ahorro:${cur}`)) agregar(`ahorro:${cur}`, { concepto: 'Cuota de ahorro (separar para objetivos)', monto: Math.round(ahorroIdeal), moneda: 'ARS', fecha: dateInMonth(cur, +S.cfg.diaAhorro || 5), medio: 'transferencia', origen: 'ahorro', detalle: 'Pasala a dólares o al fondo de cada objetivo' });
+  const cic = cicloActual();
+  if (ahorroIdeal > 0 || porRef.has(`ahorro:${cic.key}`)) agregar(`ahorro:${cic.key}`, { concepto: 'Cuota de ahorro (separar para objetivos)', monto: Math.round(ahorroIdeal), moneda: 'ARS', fecha: fechaEnCiclo(cic, Math.max(+S.cfg.diaAhorro || 5, cic.diaCobro)), medio: 'transferencia', origen: 'ahorro', detalle: 'Pasala a dólares o al fondo de cada objetivo' });
   for (const c of S.data.Cuotas.filter(c => !TARJETAS.includes(c.medio))) {
     const inf = infoCuota(c);
     for (const off of [-1, 0, 1]) {
@@ -1037,7 +1038,7 @@ function quoteBox(nombre, valor, ts, stale) {
 }
 function bannersAlerta(conMercado = true) {
   let h = '';
-  const vs = vencimientosTodos().filter(v => v.estado !== 'pagado');
+  const vs = vencimientosTodos().filter(v => v.estado !== 'pagado' && v.origen !== 'ahorro'); // la cuota de ahorro es una meta, no una deuda
   const criticos = vs.filter(v => diffDays(hoy(), v.fecha) <= 2);
   if (criticos.length) {
     const venc = criticos.filter(v => v.fecha < hoy()).length;
@@ -1113,7 +1114,7 @@ function pesosDisponibles() {
   // Solo cuentan los movimientos con fecha desde el día en que actualizaste los saldos
   // (un gasto de días anteriores que cargás después ya estaba descontado en el saldo).
   const diaRef = ref ? isoDate(new Date(ref)) : '';
-  const inicioMes = diaRef > mesActual() + '-01' ? diaRef : mesActual() + '-01';
+  const ini = cicloActual().desde, inicioMes = diaRef > ini ? diaRef : ini;
   const gastos = S.data.Gastos.filter(g => g.ambito !== 'negocio' && !TARJETAS.includes(g.medio) && despues(g) && g.fecha >= inicioMes);
   const ingresos = S.data.Ingresos.filter(i => despues(i) && i.fecha >= inicioMes);
   const nombresGastos = new Set(gastos.map(g => normTexto(g.descripcion)));
@@ -1122,7 +1123,17 @@ function pesosDisponibles() {
   const mas = sum(ingresos, i => toARS(i.monto, i.moneda));
   return { items, cargado, ref, menos, mas, total: cargado - menos + mas };
 }
-const finDeMes = () => addDays(addMonths(mesActual(), 1) + '-01', -1);
+/** Período de cobro: desde el día de cobro hasta el día anterior al próximo cobro (como la pestaña mensual
+ *  de la planilla). Con día de cobro 1 es el mes calendario. key = mes en que empieza el período. */
+function cicloActual(fecha = hoy()) {
+  const dc = clamp(Math.round(+S.cfg.diaCobro || 1), 1, 28);
+  const ym = fecha.slice(0, 7), base = +fecha.slice(8, 10) >= dc ? ym : addMonths(ym, -1);
+  const desde = dateInMonth(base, dc), cobro = dateInMonth(addMonths(base, 1), dc);
+  return { key: base, desde, hasta: addDays(cobro, -1), cobro, diaCobro: dc };
+}
+const enCiclo = (f, c) => !!f && f >= c.desde && f <= c.hasta;
+const fechaEnCiclo = (c, dia) => (dia >= c.diaCobro ? dateInMonth(c.key, dia) : dateInMonth(addMonths(c.key, 1), dia));
+const finDeMes = () => cicloActual().hasta;
 /* ---------- Plan de pagos del mes (como las columnas "Pagar" y "Pendiente" de la planilla) ----------
  * Cada pago planificado se guarda en Vencimientos con origen "plantilla" (monto del mes y día).
  * Lo pagado se toma de los gastos del mes con el mismo nombre (o categoría); falta = plan − pagado.
@@ -1133,19 +1144,19 @@ function coincidePlan(g, k) {
   return d === k || (k.length >= 3 && d.includes(k)) || c === k;
 }
 function planDePagos() {
-  const cur = mesActual();
-  const gastosMes = S.data.Gastos.filter(g => g.ambito !== 'negocio' && g.fecha.startsWith(cur));
+  const c = cicloActual();
+  const gastosMes = S.data.Gastos.filter(g => g.ambito !== 'negocio' && enCiclo(g.fecha, c));
   return S.data.Vencimientos.filter(v => v.origen === 'plantilla').map(v => {
     const k = normTexto(v.concepto), plan = toARS(+v.monto || 0, v.moneda || 'ARS');
     const pagado = sum(gastosMes.filter(g => coincidePlan(g, k)), g => toARS(g.monto, g.moneda));
-    return { v, k, plan, pagado, falta: Math.max(0, plan - pagado), fecha: dateInMonth(cur, +String(v.fecha || '').slice(8, 10) || 10) };
+    return { v, k, plan, pagado, falta: Math.max(0, plan - pagado), fecha: fechaEnCiclo(c, +String(v.fecha || '').slice(8, 10) || 10) };
   }).sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
 }
 /** Lo que falta pagar del mes: vencimientos pendientes hasta fin de mes (incluye la cuota de ahorro) y
  *  gastos fijos o resúmenes de tarjeta del mes pasado que todavía no cargaste este mes (estimados). */
 function pendienteDelMes() {
-  const cur = mesActual(), fin = finDeMes(), prev = addMonths(cur, -1);
-  const pagados = new Set(S.data.Gastos.filter(g => g.ambito !== 'negocio' && g.fecha.startsWith(cur)).map(g => normTexto(g.descripcion)));
+  const c = cicloActual(), fin = c.hasta, cAnt = cicloActual(addDays(c.desde, -1));
+  const pagados = new Set(S.data.Gastos.filter(g => g.ambito !== 'negocio' && enCiclo(g.fecha, c)).map(g => normTexto(g.descripcion)));
   const items = [];
   const venc = vencimientosTodos().filter(v => v.estado !== 'pagado' && v.fecha <= fin && +v.monto > 0);
   for (const v of venc) items.push({ concepto: v.concepto, ars: toARS(v.monto, v.moneda), fecha: v.fecha, origen: v.origen === 'ahorro' ? 'Ahorro' : v.origen === 'tarjeta' ? 'Tarjeta' : v.fecha < hoy() ? 'Vencido' : 'Vencimiento', venc: v });
@@ -1159,33 +1170,27 @@ function pendienteDelMes() {
     items.push({ k: 'plan:' + p.v.id, concepto: p.v.concepto, ars: p.falta, fecha: p.fecha, origen: p.pagado > 0 ? `Plan · pagaste ${fmtMon(p.pagado, 'ARS')} de ${fmtMon(p.plan, 'ARS')}` : 'Plan',
       gasto: { categoria: p.k === 'comida' ? 'Supermercado' : 'Otros', descripcion: p.v.concepto, monto: Math.round(p.falta), moneda: 'ARS', medio: p.v.medio || 'debito', fijo: p.k === 'comida' ? 'no' : 'si', ambito: 'personal', devuelto: 'no' } });
   }
-  for (const g of plan.length ? [] : S.data.Gastos.filter(g => g.ambito !== 'negocio' && g.fecha.startsWith(prev) && (g.fijo === 'si' || g.categoria === 'Tarjeta de crédito'))) {
+  for (const g of plan.length ? [] : S.data.Gastos.filter(g => g.ambito !== 'negocio' && enCiclo(g.fecha, cAnt) && (g.fijo === 'si' || g.categoria === 'Tarjeta de crédito'))) {
     const k = normTexto(g.descripcion);
     if (!k || pagados.has(k) || yaEstan.has(k)) continue;
     if (g.categoria === 'Tarjeta de crédito' && hayResumenAuto) continue;
     const ars = toARS(g.monto, g.moneda);
     if (porClave.has(k)) { const it = porClave.get(k); it.ars += ars; it.gasto.monto += +g.monto; continue; }
-    const it = { k, concepto: g.descripcion, ars, fecha: cur + g.fecha.slice(7), origen: g.categoria === 'Tarjeta de crédito' ? 'Tarjeta (estimado)' : 'Fijo (estimado)',
+    const it = { k, concepto: g.descripcion, ars, fecha: fechaEnCiclo(c, +g.fecha.slice(8, 10)), origen: g.categoria === 'Tarjeta de crédito' ? 'Tarjeta (estimado)' : 'Fijo (estimado)',
       gasto: { categoria: g.categoria, descripcion: g.descripcion, monto: +g.monto, moneda: g.moneda, medio: g.medio, fijo: g.fijo, ambito: 'personal', devuelto: 'no' } };
     porClave.set(k, it); items.push(it);
   }
   items.sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
   return { items, total: sum(items, i => i.ars) };
 }
-/** Ingresos fijos del mes pasado que todavía no se cargaron este mes (lo que falta cobrar). */
-function faltaCobrar() {
-  const cur = mesActual(), prev = addMonths(cur, -1);
-  const este = new Set(S.data.Ingresos.filter(i => i.fecha.startsWith(cur)).map(i => normTexto(i.concepto)));
-  const items = S.data.Ingresos.filter(i => i.tipo === 'fijo' && i.fecha.startsWith(prev) && !este.has(normTexto(i.concepto)));
-  return { items, total: sum(items, i => toARS(i.monto, i.moneda)) };
-}
-
 /* =====================================================================
    PESTAÑA MI MES: la plata del mes actual, separada de inversiones y objetivos
    ===================================================================== */
 function renderMes() {
-  const mov = movimientos(), cur = mesActual(), hoyS = hoy(), fin = finDeMes();
-  const t = pesosDisponibles(), pe = pendienteDelMes(), fc = faltaCobrar();
+  const mov = movimientos(), c = cicloActual(), hoyS = hoy(), fin = c.hasta;
+  const t = pesosDisponibles(), pe = pendienteDelMes();
+  const diasCobro = diffDays(hoyS, c.cobro);
+  const reserva = sum(t.items.filter(i => i.tipo === 'fci'), i => +i.cantidad || 0);
   const peSin = { items: pe.items.filter(i => i.origen !== 'Ahorro') }; peSin.total = sum(peSin.items, i => i.ars);
   const ahorroPend = pe.total - peSin.total;
   const sobra = t.total - peSin.total; // igual que la celda Sobra (F33) de la planilla
@@ -1193,17 +1198,17 @@ function renderMes() {
   const diasRest = diffDays(hoyS, fin) + 1;
   const porDia = disponible / diasRest, porSemana = porDia * Math.min(7, diasRest);
   const p = S.ui.periodoMes;
-  const desde = p === 'hoy' ? hoyS : p === 'semana' ? addDays(hoyS, -6) : cur + '-01';
+  const desde = p === 'hoy' ? hoyS : p === 'semana' ? addDays(hoyS, -6) : c.desde;
   const gastosPer = S.data.Gastos.filter(g => g.ambito !== 'negocio' && g.fecha >= desde && g.fecha <= hoyS).sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
   const gastadoPer = sum(gastosPer, g => toARS(g.monto, g.moneda));
   const gastadoHoy = sum(S.data.Gastos.filter(g => g.ambito !== 'negocio' && g.fecha === hoyS), g => toARS(g.monto, g.moneda));
-  const ingresosMes = S.data.Ingresos.filter(i => i.fecha.startsWith(cur));
+  const ingresosMes = S.data.Ingresos.filter(i => enCiclo(i.fecha, c));
   const todosV = vencimientosTodos();
-  const pagadosVenc = todosV.filter(v => v.estado === 'pagado' && v.fecha.startsWith(cur));
-  const ahorro = todosV.find(v => v.ref === `ahorro:${cur}`);
+  const pagadosVenc = todosV.filter(v => v.estado === 'pagado' && enCiclo(v.fecha, c));
+  const ahorro = todosV.find(v => v.ref === `ahorro:${c.key}`);
   const cuotas = cuotasIndividuales().filter(c => c.c.ambito !== 'negocio');
-  const cuotasMes = cuotas.filter(c => c.ym === cur), cuotasRest = cuotas.filter(c => c.ym > cur);
-  const topeT = +S.cfg.topeTarjetas || 0, tj = tarjetasDelMes(mov);
+  const cuotasMes = cuotas.filter(x => enCiclo(x.fecha, c)), cuotasRest = cuotas.filter(x => x.fecha > c.hasta);
+  const topeT = +S.cfg.topeTarjetas || 0, tj = sum(S.data.Gastos.filter(g => g.ambito !== 'negocio' && enCiclo(g.fecha, c) && (TARJETAS.includes(g.medio) || g.categoria === 'Tarjeta de crédito')), g => toARS(g.monto, g.moneda));
   const nivel = sobra < 0 ? 'bad' : disponible < 0 ? 'warn' : 'ok';
   const m = v => fmtMon(v, 'ARS');
   const keyV = v => (v.id ? `data-id="${esc(v.id)}"` : `data-ref="${esc(v.ref)}"`);
@@ -1212,31 +1217,31 @@ function renderMes() {
   // Pagos ya hechos este mes: vencimientos marcados y gastos fijos/tarjeta cargados (se pueden deshacer o editar)
   const pagosHechos = [
     ...pagadosVenc.map(v => ({ fecha: v.fecha, html: filaBtn(`data-venc-edit ${keyV(v)}`, esc(v.concepto), fmtMon(+v.monto, v.moneda), `${fmtDM(v.fecha)} · ${v.origen === 'ahorro' ? 'Separado' : 'Pagado'} · tocá para editar`, `<button class="btn sm" data-despagar ${keyV(v)}>↩ Deshacer</button>`) })),
-    ...S.data.Gastos.filter(g => g.ambito !== 'negocio' && g.fecha.startsWith(cur) && (g.fijo === 'si' || g.categoria === 'Tarjeta de crédito'))
+    ...S.data.Gastos.filter(g => g.ambito !== 'negocio' && enCiclo(g.fecha, c) && (g.fijo === 'si' || g.categoria === 'Tarjeta de crédito'))
       .map(g => ({ fecha: g.fecha, html: filaBtn(`data-edit="Gastos" data-id="${esc(g.id)}"`, esc(g.descripcion), fmtMon(+g.monto, g.moneda), `${fmtDM(g.fecha)} · ${esc(g.categoria)} · tocá para editar`, `<button class="btn sm" data-deshacer-gasto="${esc(g.id)}">↩ Deshacer</button>`) })),
   ].sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
   const planMes = planDePagos();
-  const nombreMes = new Date(cur + '-15T12:00').toLocaleDateString('es-AR', { month: 'long' });
+  const nombreMes = `${fmtDM(c.desde)} al ${fmtDM(c.hasta)}`;
   const baldes = estadoBaldes(mov).filter(b => !b.tope && b.aporte > 0);
 
   $('#v-mes').innerHTML = `
     ${bannersAlerta(false)}
-    <div class="card"><h2>💵 Sobrante del mes<span class="sp"></span>${pill(nivel)}</h2>
-      <div class="small muted" style="margin:-4px 0 6px">Lo mismo que la celda "Sobra" (F33) de tu planilla: lo que tenés menos lo que falta pagar.</div>
+    <div class="card"><h2>💵 Sobrante hasta el cobro<span class="sp"></span>${pill(nivel)}</h2>
+      <div class="small muted" style="margin:-4px 0 6px">Como la celda "Sobra" (F33): lo que tenés (con la reserva) menos lo que falta pagar. Período del ${fmtDM(c.desde)} al ${fmtDM(c.hasta)} · ${diasCobro <= 0 ? 'hoy cobrás' : `cobrás el ${fmtDM(c.cobro)} (en ${diasCobro} día${diasCobro === 1 ? '' : 's'})`}.</div>
       <div class="big num ${sobra >= 0 ? 'pos' : 'neg'}">${m(sobra)}</div>
       ${dolar() ? `<div class="small muted">≈ ${fmtMon(sobra / dolar(), 'USD')}</div>` : ''}
       <div class="list" style="margin-top:8px">
-        ${fila('Tengo en pesos', m(t.total), t.items.length ? t.items.map(i => esc(i.activo)).join(' · ') : '<b>Cargá cuánto tenés hoy</b> en "Tus cuentas en pesos" (abajo)')}
-        ${fila('− Falta pagar este mes', m(peSin.total), `${peSin.items.length} pago(s) pendiente(s)`)}
+        ${fila('Tengo en pesos', m(t.total), t.items.length ? (reserva > 0 ? `incluye la reserva hasta el cobro: ${m(reserva)} (${t.items.filter(i => i.tipo === 'fci').map(i => esc(i.activo)).join(', ')})` : t.items.map(i => esc(i.activo)).join(' · ')) : '<b>Cargá cuánto tenés hoy</b> en "Tus cuentas en pesos" (abajo)')}
+        ${fila('− Falta pagar hasta el cobro', m(peSin.total), `${peSin.items.length} pago(s) pendiente(s)`)}
         ${fila('<b>= Sobra</b>', `<b class="${sobra >= 0 ? 'pos' : 'neg'}">${m(sobra)}</b>`)}
       </div>
       ${ahorroPend > 0 ? `<p class="small" style="margin:10px 0 0">🐷 Si además separás la cuota de ahorro (${m(ahorroPend)}), te quedan <b class="${disponible >= 0 ? 'pos' : 'neg'}">${m(disponible)}</b>.</p>` : ''}
       <div class="row2" style="margin-top:12px">
-        <div class="stat"><div class="l">Podés gastar por día</div><div class="v num">${m(Math.max(porDia, 0))}</div><div class="small muted">quedan ${diasRest} día(s)${ahorroPend > 0 ? ', ya separando el ahorro' : ''}</div></div>
+        <div class="stat"><div class="l">Podés gastar por día</div><div class="v num">${m(Math.max(porDia, 0))}</div><div class="small muted">${diasRest} día(s) hasta el cobro${ahorroPend > 0 ? ', ya separando el ahorro' : ''}</div></div>
         <div class="stat"><div class="l">Gastado hoy</div><div class="v num ${gastadoHoy > Math.max(porDia, 0) ? 'neg' : ''}">${m(gastadoHoy)}</div><div class="small muted">por semana: ${m(Math.max(porSemana, 0))}</div></div>
       </div>
       ${!t.items.length ? '<div class="btns" style="margin-top:10px"><button class="btn pri" data-nueva-inv="liquidez">+ Cargar lo que tengo hoy</button></div>' : ''}
-      ${fc.total > 0 ? `<p class="small" style="margin:10px 0 0">Te falta cobrar ≈ ${m(fc.total)} (${fc.items.map(i => esc(i.concepto)).join(', ')}). Cuando cobres, cargalo en Ingresos.</p>` : ''}
+      <p class="small muted" style="margin:10px 0 0">Cuando cobres, cargá el sueldo en Ingresos y actualizá tus cuentas: ahí empieza el período nuevo.</p>
     </div>
 
     <div class="card"><h2>🏦 Tus cuentas en pesos<span class="sp"></span><button class="btn sm" data-nueva-inv="liquidez">+ Cuenta</button></h2>
@@ -1244,18 +1249,18 @@ function renderMes() {
       ${t.menos || t.mas ? `<p class="small muted" style="margin:8px 0 0">Desde la última actualización de saldos: −${m(t.menos)} en gastos y pagos, +${m(t.mas)} en ingresos. Saldo estimado: <b>${m(t.total)}</b>.</p>` : ''}
     </div>
 
-    <div class="card"><h2>⏳ Falta pagar este mes<span class="sp"></span><span class="mid num">${m(pe.total)}</span></h2>
+    <div class="card"><h2>⏳ Falta pagar hasta el cobro<span class="sp"></span><span class="mid num">${m(pe.total)}</span></h2>
       <div class="list">${pe.items.map(i => filaBtn(i.venc ? `data-venc-edit ${keyV(i.venc)}` : `data-pagar-fijo="${esc(i.k)}"`, esc(i.concepto), m(i.ars), `${fmtDM(i.fecha)} · ${i.origen} · ${i.venc ? 'tocá para editar' : 'tocá para cargar el pago'}`,
         i.venc ? `<button class="btn sm okb" data-pagar ${keyV(i.venc)}>${i.venc.origen === 'ahorro' ? '✓ Separado' : '✓ Pagado'}</button>` : `<button class="btn sm okb" data-pagar-fijo="${esc(i.k)}">✓ Pagado</button>`)).join('') || empty('No falta pagar nada este mes. 🎉')}</div>
       <p class="small muted" style="margin:8px 0 0">Los fijos se estiman con lo que pagaste el mes pasado. "✓ Pagado" abre el gasto con ese monto para que lo confirmes o lo corrijas.</p></div>
 
-    <div class="card"><h2>📋 Plan de pagos del mes<span class="sp"></span><button class="btn sm" data-nuevo-plan>+ Pago</button></h2>
+    <div class="card"><h2>📋 Plan de pagos del período<span class="sp"></span><button class="btn sm" data-nuevo-plan>+ Pago</button></h2>
       ${planMes.length ? `<div class="list">${planMes.map(x => filaBtn(`data-edit="Vencimientos" data-id="${esc(x.v.id)}"`, esc(x.v.concepto), x.falta > 0 ? m(x.falta) : '<span class="pos">✓</span>', `Plan ${m(x.plan)} · pagado ${m(x.pagado)} · día ${fmtDM(x.fecha)}`)).join('')}</div>
         <div class="row2" style="margin-top:10px"><div class="stat"><div class="l">Plan del mes</div><div class="v num">${m(sum(planMes, x => x.plan))}</div></div><div class="stat"><div class="l">Falta pagar del plan</div><div class="v num">${m(sum(planMes, x => x.falta))}</div></div></div>
         <p class="small muted" style="margin:8px 0 0">Como las columnas "Pagar" y "Pendiente" de tu planilla. Lo pagado sale de los gastos del mes con el mismo nombre ("Comida" toma Supermercado). Tocá un pago para cambiar el monto.</p>`
         : '<p class="small muted" style="margin:0">Cargá tus pagos de todos los meses (alquiler, servicios, comida…) con "+ Pago". Mientras tanto se estiman con lo que pagaste el mes pasado.</p>'}</div>
 
-    <div class="card"><h2>✔️ Ya pagado este mes (${pagosHechos.length})</h2>
+    <div class="card"><h2>✔️ Ya pagado en el período (${pagosHechos.length})</h2>
       <div class="list">${pagosHechos.map(x => x.html).join('') || empty('Todavía no marcaste pagos este mes.')}</div>
       <p class="small muted" style="margin:8px 0 0">¿Lo marcaste por error? Tocá "↩ Deshacer" y vuelve a "Falta pagar". Tocá el nombre para cambiar monto o fecha.</p></div>
 
@@ -1265,8 +1270,8 @@ function renderMes() {
 
     <div class="card"><h2>💳 Tarjetas y cuotas</h2><div class="list">
       ${fila('Tarjetas este mes', topeT > 0 ? `${m(tj)} <span class="small muted">de ${m(topeT)}</span>` : m(tj), topeT > 0 ? `Te quedan ${m(Math.max(topeT - tj, 0))} del tope` : 'Poné un tope en Más → Ajustes')}
-      ${fila('Cuotas de este mes', m(sum(cuotasMes, c => c.ars)), cuotasMes.map(c => `${esc(c.c.descripcion)} ${c.n}/${c.N}`).join(' · ') || 'Sin cuotas este mes')}
-      ${fila('Cuotas que quedan', m(sum(cuotasRest, c => c.ars)), cuotasRest.length ? `${cuotasRest.length} cuota(s) · la última en ${fmtMesCorto(cuotasRest.map(c => c.ym).sort().pop())}` : 'No te quedan cuotas')}
+      ${fila('Cuotas del período', m(sum(cuotasMes, x => x.ars)), cuotasMes.map(x => `${esc(x.c.descripcion)} ${x.n}/${x.N}`).join(' · ') || 'Sin cuotas en el período')}
+      ${fila('Cuotas que quedan', m(sum(cuotasRest, x => x.ars)), cuotasRest.length ? `${cuotasRest.length} cuota(s) · la última en ${fmtMesCorto(cuotasRest.map(x => x.ym).sort().pop())}` : 'No te quedan cuotas')}
       </div>${topeT > 0 ? barra(tj / topeT * 100, tj > topeT ? 'bad' : tj >= topeT * 0.8 ? 'warn' : 'ok') : ''}</div>
 
     <div class="seg" role="group" aria-label="Período">${[['hoy', 'Hoy'], ['semana', '7 días'], ['mes', 'Mes']].map(([v, tx]) => `<button data-periodo-mes="${v}" aria-pressed="${p === v}">${tx}</button>`).join('')}</div>
@@ -1829,6 +1834,7 @@ function renderAjustes() {
     <div class="card"><h2>Presupuesto y tarjetas</h2>
       <div class="grid2">${num('a-presu', c.presupuesto, 'Presupuesto mensual ($)')}${num('a-disp', c.disponibleTarjetas, 'Disponible para tarjetas ($)')}</div>
       ${num('a-topet', c.topeTarjetas, 'Tope de gasto con tarjetas por mes ($)')}
+      ${num('a-cobro', c.diaCobro, 'Día de cobro (Mi mes cuenta desde ese día hasta el anterior del mes siguiente)')}
       ${num('a-meses', c.mesesObjetivo, 'Meses por defecto para llegar a las metas')}
       ${TARJETAS.map(m => `<div class="grid2">${num(`a-${m}-cierre`, c.tarjetas[m].cierre, `${MEDIOS[m]}: día de cierre`)}${num(`a-${m}-venc`, c.tarjetas[m].venc, `${MEDIOS[m]}: día de vencimiento`)}</div>`).join('')}</div>
     <div class="card"><h2>Umbrales del semáforo</h2>
@@ -1848,7 +1854,7 @@ function guardarAjustes(form) {
   else if (url && !/^https:\/\/script\.google(usercontent)?\.com\//.test(url)) { setErr('a-url', ''); toast('Ojo: la URL no parece de Google Apps Script.', 'warn'); }
   else setErr('a-url', '');
   const nuevo = mezclar(S.cfg, {});
-  nuevo.presupuesto = leer('a-presu', 0, 1e12); nuevo.topeTarjetas = leer('a-topet', 0, 1e12); nuevo.disponibleTarjetas = leer('a-disp', 0, 1e12); nuevo.mesesObjetivo = leer('a-meses', 1, 600, true);
+  nuevo.presupuesto = leer('a-presu', 0, 1e12); nuevo.topeTarjetas = leer('a-topet', 0, 1e12); nuevo.diaCobro = leer('a-cobro', 1, 28, true); nuevo.disponibleTarjetas = leer('a-disp', 0, 1e12); nuevo.mesesObjetivo = leer('a-meses', 1, 600, true);
   for (const m of TARJETAS) nuevo.tarjetas[m] = { cierre: leer(`a-${m}-cierre`, 1, 31, true), venc: leer(`a-${m}-venc`, 1, 31, true) };
   for (const [, campos] of UMBRALES_UI) for (const [k] of campos) nuevo.umbrales[k] = leer('u-' + k, 0, 1000);
   const u = nuevo.umbrales;
@@ -2216,7 +2222,7 @@ async function importarDesdeEnlace() {
     const datos = JSON.parse(txt);
     const hojas = Object.keys(datos).filter(h => HOJAS.includes(h) && Array.isArray(datos[h].rows));
     // Ajustes que puede traer el enlace (solo estos campos)
-    const cfgOk = ['presupuesto', 'topeTarjetas', 'mesesObjetivo'];
+    const cfgOk = ['presupuesto', 'topeTarjetas', 'mesesObjetivo', 'diaCobro'];
     const cfgNuevo = datos.cfg && typeof datos.cfg === 'object' ? Object.fromEntries(Object.entries(datos.cfg).filter(([k, v]) => cfgOk.includes(k) && isFinite(+v) && +v >= 0).map(([k, v]) => [k, +v])) : {};
     if (!hojas.length && !Object.keys(cfgNuevo).length) throw new Error('El enlace no tiene datos para importar.');
     const resumen = [...hojas.map(h => `${datos[h].rows.length} ${h.toLowerCase()}`), ...(Object.keys(cfgNuevo).length ? ['tus topes de gasto'] : [])].join(' y ');
