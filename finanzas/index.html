@@ -325,7 +325,7 @@ const LS = {
 /** Versión mínima del script de Google que necesita esta app (ver apps-script/Code.gs). */
 const VERSION_SCRIPT_MIN = 5;
 /** Versión visible de la app (se ve en Más). Cambiarla junto con VERSION en sw.js. */
-const APP_VERSION = '2026-10-02.6';
+const APP_VERSION = '2026-10-02.7';
 const HOJAS = ['Ingresos', 'Gastos', 'Cuotas', 'Inversiones', 'Vencimientos', 'Objetivos', 'Historial'];
 const NUMERICOS = ['monto', 'montoCuota', 'cuotasTotales', 'cantidad', 'precioCompra', 'tcCompra', 'meta', 'saldoInicial', 'patrimonioARS', 'patrimonioUSD', 'dolar'];
 const TARJETAS = ['visa', 'mastercard'];
@@ -344,7 +344,7 @@ const CRIPTO_EXTRA = { XRP: 'ripple', NEXO: 'nexo', XLM: 'stellar', SOL: 'solana
 const ESTABLES_USD = ['USDX'];
 
 const DEFAULT_CFG = {
-  scriptUrl: '', token: '', dolarTipo: 'mep', vista: 'ARS', presupuesto: 0, disponibleTarjetas: 0, mesesObjetivo: 12, topeTarjetas: 0, diaAhorro: 5, diaCobro: 1,
+  scriptUrl: '', token: '', dolarTipo: 'mep', vista: 'ARS', presupuesto: 0, disponibleTarjetas: 0, mesesObjetivo: 12, topeTarjetas: 0, diaAhorro: 5, diaCobro: 1, cobroHabil: 0,
   tarjetas: { visa: { cierre: 25, venc: 5 }, mastercard: { cierre: 25, venc: 5 } },
   umbrales: {
     ahorroOk: 20, ahorroAt: 10, gastoOk: 80, gastoAt: 100, cobOk: 110, cobAt: 100, invAt: 5,
@@ -480,7 +480,7 @@ function vencimientosTodos() {
   // Cuota de ahorro del mes: lo que hay que separar para llegar a los objetivos
   const ahorroIdeal = cuotaAhorroMes();
   const cic = cicloActual();
-  if (ahorroIdeal > 0 || porRef.has(`ahorro:${cic.key}`)) agregar(`ahorro:${cic.key}`, { concepto: 'Cuota de ahorro (separar para objetivos)', monto: Math.round(ahorroIdeal), moneda: 'ARS', fecha: fechaEnCiclo(cic, Math.max(+S.cfg.diaAhorro || 5, cic.diaCobro)), medio: 'transferencia', origen: 'ahorro', detalle: 'Pasala a dólares o al fondo de cada objetivo' });
+  if (ahorroIdeal > 0 || porRef.has(`ahorro:${cic.key}`)) agregar(`ahorro:${cic.key}`, { concepto: 'Cuota de ahorro (separar para objetivos)', monto: Math.round(ahorroIdeal), moneda: 'ARS', fecha: addDays(cic.desde, 1), medio: 'transferencia', origen: 'ahorro', detalle: 'Pasala a dólares o al fondo de cada objetivo' });
   for (const c of S.data.Cuotas.filter(c => !TARJETAS.includes(c.medio))) {
     const inf = infoCuota(c);
     for (const off of [-1, 0, 1]) {
@@ -841,7 +841,7 @@ let actualizandoCotiz = false;
 async function actualizarCotizaciones({ manual = false } = {}) {
   if (actualizandoCotiz) return;
   actualizandoCotiz = true; $('#ico-refresh').classList.add('spin');
-  const res = await Promise.allSettled([cargarDolar(), cargarCripto(), cargarMercado(), cargarRiesgoPais(), cargarContexto()]);
+  const res = await Promise.allSettled([cargarDolar(), cargarCripto(), cargarMercado(), cargarRiesgoPais(), cargarContexto(), cargarFeriados()]);
   actualizandoCotiz = false; $('#ico-refresh').classList.remove('spin');
   S.quotes.meta.ultima = new Date().toISOString();
   LS.set('quotes', S.quotes);
@@ -1125,14 +1125,38 @@ function pesosDisponibles() {
 }
 /** Período de cobro: desde el día de cobro hasta el día anterior al próximo cobro (como la pestaña mensual
  *  de la planilla). Con día de cobro 1 es el mes calendario. key = mes en que empieza el período. */
+/** Feriados nacionales de Argentina (inamovibles, trasladables y días no laborables con bancos cerrados).
+ *  Incluye el Día del Bancario (6/11, bancos cerrados). Se completan con los que trae ArgentinaDatos
+ *  cuando hay conexión (se guardan en el dispositivo). */
+const FERIADOS_AR = new Set([
+  '2026-01-01', '2026-02-16', '2026-02-17', '2026-03-23', '2026-03-24', '2026-04-02', '2026-04-03', '2026-05-01', '2026-05-25', '2026-06-15', '2026-06-20', '2026-07-09', '2026-07-10', '2026-08-17', '2026-10-12', '2026-11-06', '2026-11-23', '2026-12-07', '2026-12-08', '2026-12-25',
+  '2027-01-01', '2027-02-08', '2027-02-09', '2027-03-24', '2027-03-25', '2027-03-26', '2027-04-02', '2027-05-01', '2027-05-25', '2027-06-17', '2027-06-20', '2027-07-09', '2027-08-16', '2027-10-11', '2027-11-06', '2027-11-22', '2027-12-08', '2027-12-25',
+  ...(LS.get('feriados', []) || []),
+]);
+async function cargarFeriados() {
+  const anio = +hoy().slice(0, 4), nuevos = [];
+  for (const y of [anio, anio + 1]) {
+    try { const arr = await fetchJSON(`https://api.argentinadatos.com/v1/feriados/${y}`); for (const f of arr || []) if (/^\d{4}-\d{2}-\d{2}$/.test(f.fecha)) nuevos.push(f.fecha); } catch (e) { /* sin conexión: quedan los cargados */ }
+  }
+  if (nuevos.length) { nuevos.forEach(f => FERIADOS_AR.add(f)); LS.set('feriados', [...new Set([...(LS.get('feriados', []) || []), ...nuevos])].slice(-200)); }
+}
+const esHabil = f => { const d = new Date(f + 'T12:00').getDay(); return d !== 0 && d !== 6 && !FERIADOS_AR.has(f); };
+/** Día de cobro de un mes: el día N del mes, o el N.° día hábil si "cobroHabil" está activado. */
+function fechaCobro(ym) {
+  const n = clamp(Math.round(+S.cfg.diaCobro || 1), 1, 28);
+  if (!+S.cfg.cobroHabil) return dateInMonth(ym, n);
+  let f = ym + '-01', k = 0;
+  for (let i = 0; i < 31; i++, f = addDays(f, 1)) { if (esHabil(f) && ++k === n) return f; }
+  return dateInMonth(ym, n);
+}
 function cicloActual(fecha = hoy()) {
-  const dc = clamp(Math.round(+S.cfg.diaCobro || 1), 1, 28);
-  const ym = fecha.slice(0, 7), base = +fecha.slice(8, 10) >= dc ? ym : addMonths(ym, -1);
-  const desde = dateInMonth(base, dc), cobro = dateInMonth(addMonths(base, 1), dc);
-  return { key: base, desde, hasta: addDays(cobro, -1), cobro, diaCobro: dc };
+  const ym = fecha.slice(0, 7), base = fecha >= fechaCobro(ym) ? ym : addMonths(ym, -1);
+  const desde = fechaCobro(base), cobro = fechaCobro(addMonths(base, 1));
+  return { key: base, desde, hasta: addDays(cobro, -1), cobro, diaCobro: +desde.slice(8, 10) };
 }
 const enCiclo = (f, c) => !!f && f >= c.desde && f <= c.hasta;
-const fechaEnCiclo = (c, dia) => (dia >= c.diaCobro ? dateInMonth(c.key, dia) : dateInMonth(addMonths(c.key, 1), dia));
+/** Fecha dentro del período para un pago que vence el día "dia" de cada mes. */
+const fechaEnCiclo = (c, dia) => { const f = dateInMonth(c.key, dia); return f >= c.desde ? f : dateInMonth(addMonths(c.key, 1), dia); };
 const finDeMes = () => cicloActual().hasta;
 /* ---------- Plan de pagos del mes (como las columnas "Pagar" y "Pendiente" de la planilla) ----------
  * Cada pago planificado se guarda en Vencimientos con origen "plantilla" (monto del mes y día).
@@ -1834,7 +1858,8 @@ function renderAjustes() {
     <div class="card"><h2>Presupuesto y tarjetas</h2>
       <div class="grid2">${num('a-presu', c.presupuesto, 'Presupuesto mensual ($)')}${num('a-disp', c.disponibleTarjetas, 'Disponible para tarjetas ($)')}</div>
       ${num('a-topet', c.topeTarjetas, 'Tope de gasto con tarjetas por mes ($)')}
-      ${num('a-cobro', c.diaCobro, 'Día de cobro (Mi mes cuenta desde ese día hasta el anterior del mes siguiente)')}
+      <div class="grid2">${num('a-cobro', c.diaCobro, 'Día de cobro')}<div class="field"><label for="a-habil">¿Cómo se cuenta?</label><select id="a-habil"><option value="1" ${+c.cobroHabil ? 'selected' : ''}>Día hábil (sin fines de semana ni feriados)</option><option value="0" ${+c.cobroHabil ? '' : 'selected'}>Día del mes</option></select></div></div>
+      <div class="small muted" style="margin:-4px 0 10px">Mi mes cuenta desde el cobro hasta el día anterior al próximo cobro${S.cfg.diaCobro > 1 || +S.cfg.cobroHabil ? ` (ahora: ${fmtDM(cicloActual().desde)} al ${fmtDM(cicloActual().hasta)})` : ''}.</div>
       ${num('a-meses', c.mesesObjetivo, 'Meses por defecto para llegar a las metas')}
       ${TARJETAS.map(m => `<div class="grid2">${num(`a-${m}-cierre`, c.tarjetas[m].cierre, `${MEDIOS[m]}: día de cierre`)}${num(`a-${m}-venc`, c.tarjetas[m].venc, `${MEDIOS[m]}: día de vencimiento`)}</div>`).join('')}</div>
     <div class="card"><h2>Umbrales del semáforo</h2>
@@ -1854,7 +1879,7 @@ function guardarAjustes(form) {
   else if (url && !/^https:\/\/script\.google(usercontent)?\.com\//.test(url)) { setErr('a-url', ''); toast('Ojo: la URL no parece de Google Apps Script.', 'warn'); }
   else setErr('a-url', '');
   const nuevo = mezclar(S.cfg, {});
-  nuevo.presupuesto = leer('a-presu', 0, 1e12); nuevo.topeTarjetas = leer('a-topet', 0, 1e12); nuevo.diaCobro = leer('a-cobro', 1, 28, true); nuevo.disponibleTarjetas = leer('a-disp', 0, 1e12); nuevo.mesesObjetivo = leer('a-meses', 1, 600, true);
+  nuevo.presupuesto = leer('a-presu', 0, 1e12); nuevo.topeTarjetas = leer('a-topet', 0, 1e12); nuevo.diaCobro = leer('a-cobro', 1, 28, true); nuevo.cobroHabil = +$('#a-habil').value; nuevo.disponibleTarjetas = leer('a-disp', 0, 1e12); nuevo.mesesObjetivo = leer('a-meses', 1, 600, true);
   for (const m of TARJETAS) nuevo.tarjetas[m] = { cierre: leer(`a-${m}-cierre`, 1, 31, true), venc: leer(`a-${m}-venc`, 1, 31, true) };
   for (const [, campos] of UMBRALES_UI) for (const [k] of campos) nuevo.umbrales[k] = leer('u-' + k, 0, 1000);
   const u = nuevo.umbrales;
@@ -2222,7 +2247,7 @@ async function importarDesdeEnlace() {
     const datos = JSON.parse(txt);
     const hojas = Object.keys(datos).filter(h => HOJAS.includes(h) && Array.isArray(datos[h].rows));
     // Ajustes que puede traer el enlace (solo estos campos)
-    const cfgOk = ['presupuesto', 'topeTarjetas', 'mesesObjetivo', 'diaCobro'];
+    const cfgOk = ['presupuesto', 'topeTarjetas', 'mesesObjetivo', 'diaCobro', 'cobroHabil'];
     const cfgNuevo = datos.cfg && typeof datos.cfg === 'object' ? Object.fromEntries(Object.entries(datos.cfg).filter(([k, v]) => cfgOk.includes(k) && isFinite(+v) && +v >= 0).map(([k, v]) => [k, +v])) : {};
     if (!hojas.length && !Object.keys(cfgNuevo).length) throw new Error('El enlace no tiene datos para importar.');
     const resumen = [...hojas.map(h => `${datos[h].rows.length} ${h.toLowerCase()}`), ...(Object.keys(cfgNuevo).length ? ['tus topes de gasto'] : [])].join(' y ');
