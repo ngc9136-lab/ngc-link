@@ -148,6 +148,8 @@ section.view{display:none} section.view.on{display:block}
 .banner.info{background:rgba(57,135,229,.14);border-color:var(--acc);color:#d6e7ff}
 .banner.ok{background:var(--ok-bg);border-color:var(--ok);color:#dcf7dc}
 .banner b{font-weight:800}
+.acc-pend{display:flex;gap:6px;margin-top:6px;justify-content:flex-end;flex-wrap:nowrap}
+.acc-pend .btn{width:auto;flex:0 0 auto;min-width:40px;padding:0 10px}
 .linkbtn{background:none;border:0;padding:0;color:var(--acc);font:inherit;text-decoration:underline;cursor:pointer}
 .banner .bi{font-size:20px;line-height:1}
 .banner button{text-decoration:underline;font-weight:800}
@@ -325,7 +327,7 @@ const LS = {
 /** Versión mínima del script de Google que necesita esta app (ver apps-script/Code.gs). */
 const VERSION_SCRIPT_MIN = 5;
 /** Versión visible de la app (se ve en Más). Cambiarla junto con VERSION en sw.js. */
-const APP_VERSION = '2026-10-02.7';
+const APP_VERSION = '2026-10-06.1';
 const HOJAS = ['Ingresos', 'Gastos', 'Cuotas', 'Inversiones', 'Vencimientos', 'Objetivos', 'Historial'];
 const NUMERICOS = ['monto', 'montoCuota', 'cuotasTotales', 'cantidad', 'precioCompra', 'tcCompra', 'meta', 'saldoInicial', 'patrimonioARS', 'patrimonioUSD', 'dolar'];
 const TARJETAS = ['visa', 'mastercard'];
@@ -458,7 +460,7 @@ function resumenTarjeta(medio, ym) {
 }
 /** Vencimientos manuales + automáticos (resúmenes de tarjeta y cuotas fuera de tarjeta). */
 function vencimientosTodos() {
-  const guardados = S.data.Vencimientos.filter(v => v.origen !== 'plantilla'); // las plantillas son el plan de pagos del mes
+  const guardados = S.data.Vencimientos.filter(v => v.origen !== 'plantilla' && v.origen !== 'omitido'); // plantillas = plan de pagos; omitido = salteado en un período
   const porRef = new Map(guardados.filter(v => v.ref).map(v => [v.ref, v]));
   const autos = [];
   const cur = mesActual();
@@ -491,7 +493,7 @@ function vencimientosTodos() {
     }
   }
   const refsAuto = new Set(autos.map(a => a.ref));
-  return [...guardados.filter(v => !v.ref || !refsAuto.has(v.ref)), ...autos].sort((a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0));
+  return [...guardados.filter(v => !v.ref || !refsAuto.has(v.ref)), ...autos].filter(v => v.estado !== 'omitido').sort((a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0));
 }
 /** Movimientos normalizados en pesos: gastos (incluye cuotas) e ingresos. */
 function movimientos() {
@@ -1167,10 +1169,21 @@ function coincidePlan(g, k) {
   if (k === 'comida') return c === 'supermercado' || c === 'comida' || d.includes('comida');
   return d === k || (k.length >= 3 && d.includes(k)) || c === k;
 }
+/** Pagos salteados en un período ("🗑 → solo este período"): refs omitir:<período>:<clave>. */
+function refsOmitidas(c = cicloActual()) {
+  const pre = `omitir:${c.key}:`;
+  return new Set(S.data.Vencimientos.filter(v => v.origen === 'omitido' && String(v.ref || '').startsWith(pre)).map(v => v.ref.slice(pre.length)));
+}
+function omitirEnPeriodo(clave, concepto, ars) {
+  const c = cicloActual();
+  guardarFila('Vencimientos', { concepto, monto: Math.round(ars || 0), moneda: 'ARS', fecha: c.desde, medio: 'otro', estado: 'omitido', origen: 'omitido', ref: `omitir:${c.key}:${clave}` });
+  toast(`"${concepto}" salteado en este período. Podés deshacerlo con ↶.`, 'ok', 3500);
+}
 function planDePagos() {
   const c = cicloActual();
   const gastosMes = S.data.Gastos.filter(g => g.ambito !== 'negocio' && enCiclo(g.fecha, c));
-  return S.data.Vencimientos.filter(v => v.origen === 'plantilla').map(v => {
+  const omitidos = refsOmitidas(c);
+  return S.data.Vencimientos.filter(v => v.origen === 'plantilla' && !omitidos.has('plan:' + v.id)).map(v => {
     const k = normTexto(v.concepto), plan = toARS(+v.monto || 0, v.moneda || 'ARS');
     const pagado = sum(gastosMes.filter(g => coincidePlan(g, k)), g => toARS(g.monto, g.moneda));
     return { v, k, plan, pagado, falta: Math.max(0, plan - pagado), fecha: fechaEnCiclo(c, +String(v.fecha || '').slice(8, 10) || 10) };
@@ -1194,9 +1207,10 @@ function pendienteDelMes() {
     items.push({ k: 'plan:' + p.v.id, concepto: p.v.concepto, ars: p.falta, fecha: p.fecha, origen: p.pagado > 0 ? `Plan · pagaste ${fmtMon(p.pagado, 'ARS')} de ${fmtMon(p.plan, 'ARS')}` : 'Plan',
       gasto: { categoria: p.k === 'comida' ? 'Supermercado' : 'Otros', descripcion: p.v.concepto, monto: Math.round(p.falta), moneda: 'ARS', medio: p.v.medio || 'debito', fijo: p.k === 'comida' ? 'no' : 'si', ambito: 'personal', devuelto: 'no' } });
   }
+  const omitidos = refsOmitidas(c);
   for (const g of plan.length ? [] : S.data.Gastos.filter(g => g.ambito !== 'negocio' && enCiclo(g.fecha, cAnt) && (g.fijo === 'si' || g.categoria === 'Tarjeta de crédito'))) {
     const k = normTexto(g.descripcion);
-    if (!k || pagados.has(k) || yaEstan.has(k)) continue;
+    if (!k || pagados.has(k) || yaEstan.has(k) || omitidos.has(k)) continue;
     if (g.categoria === 'Tarjeta de crédito' && hayResumenAuto) continue;
     const ars = toARS(g.monto, g.moneda);
     if (porClave.has(k)) { const it = porClave.get(k); it.ars += ars; it.gasto.monto += +g.monto; continue; }
@@ -1274,9 +1288,15 @@ function renderMes() {
     </div>
 
     <div class="card"><h2>⏳ Falta pagar hasta el cobro<span class="sp"></span><span class="mid num">${m(pe.total)}</span></h2>
-      <div class="list">${pe.items.map(i => filaBtn(i.venc ? `data-venc-edit ${keyV(i.venc)}` : `data-pagar-fijo="${esc(i.k)}"`, esc(i.concepto), m(i.ars), `${fmtDM(i.fecha)} · ${i.origen} · ${i.venc ? 'tocá para editar' : 'tocá para cargar el pago'}`,
-        i.venc ? `<button class="btn sm okb" data-pagar ${keyV(i.venc)}>${i.venc.origen === 'ahorro' ? '✓ Separado' : '✓ Pagado'}</button>` : `<button class="btn sm okb" data-pagar-fijo="${esc(i.k)}">✓ Pagado</button>`)).join('') || empty('No falta pagar nada este mes. 🎉')}</div>
-      <p class="small muted" style="margin:8px 0 0">Los fijos se estiman con lo que pagaste el mes pasado. "✓ Pagado" abre el gasto con ese monto para que lo confirmes o lo corrijas.</p></div>
+      <div class="list">${pe.items.map(i => {
+        const esPlan = String(i.k || '').startsWith('plan:'), idPlan = esPlan ? i.k.slice(5) : '';
+        const editar = i.venc ? `data-venc-edit ${keyV(i.venc)}` : esPlan ? `data-edit="Vencimientos" data-id="${esc(idPlan)}"` : `data-pagar-fijo="${esc(i.k)}"`;
+        const borrar = i.venc ? `data-borrar-pend="venc" ${keyV(i.venc)}` : `data-borrar-pend="${esPlan ? 'plan' : 'fijo'}" data-k="${esc(i.k)}"`;
+        const pagar = i.venc ? `<button class="btn sm okb" data-pagar ${keyV(i.venc)}>${i.venc.origen === 'ahorro' ? '✓ Separado' : '✓ Pagado'}</button>` : `<button class="btn sm okb" data-pagar-fijo="${esc(i.k)}">✓ Pagado</button>`;
+        return filaBtn(editar, esc(i.concepto), m(i.ars), `${fmtDM(i.fecha)} · ${i.origen}`,
+          `<div class="acc-pend">${pagar}<button class="btn sm" ${editar} aria-label="Editar ${esc(i.concepto)}">✏️</button><button class="btn sm" ${borrar} aria-label="Eliminar ${esc(i.concepto)}">🗑</button></div>`);
+      }).join('') || empty('No falta pagar nada en este período. 🎉')}</div>
+      <p class="small muted" style="margin:8px 0 0">✓ Pagado: carga el pago. ✏️ Editar: cambia el monto o la fecha. 🗑 Eliminar: lo saltea en este período o lo saca del plan. Todo se deshace con ↶.</p></div>
 
     <div class="card"><h2>📋 Plan de pagos del período<span class="sp"></span><button class="btn sm" data-nuevo-plan>+ Pago</button></h2>
       ${planMes.length ? `<div class="list">${planMes.map(x => filaBtn(`data-edit="Vencimientos" data-id="${esc(x.v.id)}"`, esc(x.v.concepto), x.falta > 0 ? m(x.falta) : '<span class="pos">✓</span>', `Plan ${m(x.plan)} · pagado ${m(x.pagado)} · día ${fmtDM(x.fecha)}`)).join('')}</div>
@@ -2143,6 +2163,27 @@ document.addEventListener('click', e => {
   if (ds.fv) { S.ui.filtroVenc = ds.fv; return renderTodo(); }
   if (ds.nuevaInv) { abrirForm('Inversiones', null, { vals: { tipo: ds.nuevaInv, plataforma: ds.nuevaInv === 'liquidez' ? 'Galicia' : 'Cocos', monedaCompra: ds.nuevaInv === 'accion' ? 'USD' : 'ARS' }, titulo: { accion: 'acción o cripto', liquidez: 'dinero disponible', fci: 'FCI' }[ds.nuevaInv] }); return; }
   if (ds.edit) { const row = S.data[ds.edit].find(r => r.id === ds.id); if (row) abrirForm(ds.edit, row); return; }
+  if (ds.borrarPend) {
+    const tipo = ds.borrarPend;
+    if (tipo === 'venc') {
+      const v = buscarVenc(t); if (!v) return;
+      if (v.id && !v.auto) { if (confirm(`¿Eliminar "${v.concepto}"?`)) { borrarFila('Vencimientos', v.id); toast('Eliminado. Podés deshacerlo con ↶.', 'ok', 3000); } return; }
+      if (confirm(`¿Saltear "${v.concepto}" en este período?`)) {
+        const base = v.id ? { ...S.data.Vencimientos.find(x => x.id === v.id) } : { concepto: v.concepto, monto: v.monto, moneda: v.moneda, fecha: v.fecha, medio: v.medio, origen: v.origen, ref: v.ref };
+        guardarFila('Vencimientos', { ...base, estado: 'omitido' }); toast(`"${v.concepto}" salteado. Podés deshacerlo con ↶.`, 'ok', 3000);
+      }
+      return;
+    }
+    const it = pendienteDelMes().items.find(x => x.k === ds.k); if (!it) return;
+    if (tipo === 'plan') {
+      const id = it.k.slice(5);
+      if (confirm(`¿Saltear "${it.concepto}" solo en este período?\n\nAceptar = solo este período (vuelve el mes que viene).\nCancelar = otras opciones.`)) omitirEnPeriodo(it.k, it.concepto, it.ars);
+      else if (confirm(`¿Sacar "${it.concepto}" del plan de pagos para siempre?`)) { borrarFila('Vencimientos', id); toast('Sacado del plan. Podés deshacerlo con ↶.', 'ok', 3000); }
+      return;
+    }
+    if (confirm(`¿Saltear "${it.concepto}" en este período?`)) omitirEnPeriodo(it.k, it.concepto, it.ars);
+    return;
+  }
   if ('nuevoPlan' in ds) { abrirForm('Vencimientos', null, { fijos: { origen: 'plantilla', estado: 'pendiente' }, vals: { fecha: hoy(), medio: 'debito' }, titulo: 'pago del plan mensual (solo importa el día)' }); return; }
   if (ds.periodoMes) { S.ui.periodoMes = ds.periodoMes; renderTodo(); return; }
   if (ds.pagarFijo !== undefined) { const it = pendienteDelMes().items.find(x => x.k === ds.pagarFijo); if (it) abrirForm('Gastos', null, { vals: { ...it.gasto, fecha: hoy() }, titulo: 'gasto (confirmá el monto)' }); return; }
