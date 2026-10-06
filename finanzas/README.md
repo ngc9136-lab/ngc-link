@@ -218,3 +218,8 @@ La URL del script, la clave y los ajustes se guardan **solo en el dispositivo** 
 - **Deshacer / Rehacer** (botones abajo a la izquierda en todas las pantallas, o Ctrl+Z / Ctrl+Y): deshace altas, cambios y borrados, incluidos los pagos marcados. Los cambios hechos juntos se deshacen de una vez. Se guardan los últimos 40 pasos en el dispositivo.
 - **Período de cobro** (Ajustes → Día de cobro, contado como día del mes o como día hábil: sin sábados, domingos ni feriados nacionales o bancarios, por ejemplo el 4.° día hábil): Mi mes cuenta desde el día de cobro hasta el día anterior al próximo cobro, como la pestaña mensual de la planilla. El "Sobrante hasta el cobro" incluye la reserva en fondos en pesos (por ejemplo, Cocos) y el gasto por día se calcula con los días que faltan para cobrar.
 - **Plan de pagos del período**: pagos planificados (se guardan en Vencimientos con origen `plantilla`); falta = plan − lo pagado con el mismo nombre. "Comida" usa los gastos de Supermercado.
+
+## Recibos de sueldo
+
+Al cargar un recibo, las **horas extras** se separan del sueldo como ingreso variable. Cuentan como horas extras los códigos 2536 (Hs. Complementarias 50%), 4280 (Hs. Complementarias al 50%), 809 y 810 (Ajuste por extensión de jornada). Los dos primeros llevan aportes; el 809 y el 810 son no remunerativos.
+
