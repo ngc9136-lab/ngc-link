@@ -11,7 +11,7 @@
  */
 
 /** Versión del script: la app avisa si hay que actualizarlo. */
-var VERSION_SCRIPT = 6;
+var VERSION_SCRIPT = 7;
 
 /** Encabezados de cada hoja de datos. La columna "id" identifica cada fila. */
 var ESQUEMA = {
@@ -65,6 +65,7 @@ function doPost(e) {
   try {
     var cuerpo = JSON.parse((e && e.postData && e.postData.contents) || '{}');
     verificarToken_(cuerpo.token);
+    if (cuerpo.archivo) return json_(subirArchivo_(cuerpo.archivo)); // comprobante (foto o PDF) a Google Drive
     var ops = cuerpo.ops || [];
     if (!Array.isArray(ops)) throw new Error('El campo ops tiene que ser una lista.');
     if (ops.length > 200) throw new Error('Demasiadas operaciones juntas (máximo 200).');
@@ -227,6 +228,21 @@ function agregarIndicadores_(hoja) {
     hoja.getRange(f, 4).setValue(x[2]);
     tiene.push(x[0]);
   });
+}
+
+/** Guarda un comprobante (foto de ticket o PDF de resumen) en la carpeta "Mis Finanzas - Comprobantes" de tu Drive. */
+var CARPETA_COMPROBANTES = 'Mis Finanzas - Comprobantes';
+function subirArchivo_(a) {
+  var tipos = ['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'application/pdf'];
+  if (!a || !a.datos) throw new Error('Falta el archivo.');
+  var tipo = tipos.indexOf(a.tipo) >= 0 ? a.tipo : 'image/jpeg';
+  var bytes = Utilities.base64Decode(a.datos);
+  if (bytes.length > 15 * 1024 * 1024) throw new Error('El archivo es muy grande (máximo 15 MB).');
+  var it = DriveApp.getFoldersByName(CARPETA_COMPROBANTES);
+  var carpeta = it.hasNext() ? it.next() : DriveApp.createFolder(CARPETA_COMPROBANTES);
+  var nombre = String(a.nombre || 'comprobante').replace(/[\\/:*?"<>|]/g, '-').slice(0, 100);
+  var archivo = carpeta.createFile(Utilities.newBlob(bytes, tipo, nombre));
+  return { ok: true, url: archivo.getUrl(), id: archivo.getId() };
 }
 
 /** Riesgo país desde ArgentinaDatos (se guarda 30 minutos). Si falla, devuelve null. */

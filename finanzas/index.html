@@ -148,6 +148,10 @@ section.view{display:none} section.view.on{display:block}
 .banner.info{background:rgba(57,135,229,.14);border-color:var(--acc);color:#d6e7ff}
 .banner.ok{background:var(--ok-bg);border-color:var(--ok);color:#dcf7dc}
 .banner b{font-weight:800}
+.comp-bar{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px}
+.comp-bar .btn{min-height:48px;font-size:15px;padding:0 8px}
+.comp-prev{margin-bottom:12px;text-align:center}
+.comp-prev img{max-width:100%;max-height:260px;border-radius:12px;border:1px solid var(--line);display:block;margin:0 auto 6px}
 .mes-grid{display:grid;gap:0 16px}
 .row3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:10px}
 .row3 .v{font-size:clamp(14px,4.2vw,20px);white-space:nowrap}
@@ -249,6 +253,8 @@ details.card>summary::after{content:" ▾";color:var(--muted)}
 </main>
 
 <div class="undobar" role="group" aria-label="Deshacer y rehacer"><button id="btn-undo" title="Deshacer (Ctrl+Z)" aria-label="Deshacer el último cambio" disabled>↶ <span>Deshacer</span></button><button id="btn-redo" title="Rehacer (Ctrl+Y)" aria-label="Rehacer" disabled>↷ <span>Rehacer</span></button></div>
+<input type="file" id="in-foto" accept="image/*" capture="environment" hidden>
+<input type="file" id="in-archivo" accept="image/*,application/pdf" hidden>
 <button class="fab" id="fab" aria-label="Agregar" hidden>+</button>
 
 <nav class="bottom" id="nav" aria-label="Secciones"></nav>
@@ -339,7 +345,7 @@ const LS = {
 /** Versión mínima del script de Google que necesita esta app (ver apps-script/Code.gs). */
 const VERSION_SCRIPT_MIN = 5;
 /** Versión visible de la app (se ve en Más). Cambiarla junto con VERSION en sw.js. */
-const APP_VERSION = '2026-10-07.1';
+const APP_VERSION = '2026-10-07.2';
 const HOJAS = ['Ingresos', 'Gastos', 'Cuotas', 'Inversiones', 'Vencimientos', 'Objetivos', 'Historial'];
 const NUMERICOS = ['monto', 'montoCuota', 'cuotasTotales', 'cantidad', 'precioCompra', 'tcCompra', 'meta', 'saldoInicial', 'patrimonioARS', 'patrimonioUSD', 'dolar'];
 const TARJETAS = ['visa', 'mastercard'];
@@ -1235,6 +1241,83 @@ function pendienteDelMes() {
   items.sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
   return { items, total: sum(items, i => i.ars) };
 }
+/* ---------- Comprobantes: fotos de tickets y resúmenes de tarjeta ----------
+ * Se guardan en el celular (IndexedDB) y, si el script de Google lo permite (v7+), se suben a tu Google Drive
+ * (carpeta "Mis Finanzas - Comprobantes"); el gasto guarda "local:<id>" o el enlace de Drive en la columna comprobante. */
+const IDB = {
+  db: null,
+  abrir() { if (this.db) return Promise.resolve(this.db); return new Promise((ok, mal) => { const r = indexedDB.open('fin-comprobantes', 1); r.onupgradeneeded = () => r.result.createObjectStore('archivos'); r.onsuccess = () => { this.db = r.result; ok(this.db); }; r.onerror = () => mal(r.error); }); },
+  async put(k, v) { const db = await this.abrir(); return new Promise((ok, mal) => { const tx = db.transaction('archivos', 'readwrite'); tx.objectStore('archivos').put(v, k); tx.oncomplete = () => ok(); tx.onerror = () => mal(tx.error); }); },
+  async get(k) { const db = await this.abrir(); return new Promise((ok, mal) => { const r = db.transaction('archivos').objectStore('archivos').get(k); r.onsuccess = () => ok(r.result); r.onerror = () => mal(r.error); }); },
+};
+let modoAdjunto = 'nuevo'; // 'nuevo' = gasto nuevo; 'form' = adjuntar al gasto abierto en el formulario
+/** Achica las fotos (máximo 1600 px, JPEG) para que ocupen poco y se suban rápido. */
+function achicarImagen(file) {
+  return new Promise(ok => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      const k = Math.min(1, 1600 / Math.max(img.width, img.height));
+      const cv = document.createElement('canvas'); cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height); URL.revokeObjectURL(url);
+      cv.toBlob(b => ok(b || file), 'image/jpeg', 0.72);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); ok(file); };
+    img.src = url;
+  });
+}
+async function recibirArchivo(file) {
+  if (!file) return;
+  const esPdf = file.type === 'application/pdf';
+  if (!esPdf && !file.type.startsWith('image/')) return toast('Elegí una foto o un PDF.', 'warn');
+  if (file.size > 15e6) return toast('El archivo es muy grande (máximo 15 MB).', 'warn');
+  const blob = esPdf ? file : await achicarImagen(file);
+  const id = 'cp-' + uid();
+  try { await IDB.put(id, { blob, nombre: file.name || (esPdf ? 'resumen.pdf' : 'ticket.jpg'), tipo: blob.type || file.type, fecha: new Date().toISOString() }); }
+  catch (e) { return toast('No se pudo guardar el comprobante en el celular: ' + e.message, 'bad'); }
+  const comp = 'local:' + id;
+  if (modoAdjunto === 'form' && formActual && formActual.hoja === 'Gastos') {
+    formActual.extra.fijos = { ...(formActual.extra.fijos || {}), comprobante: comp };
+    mostrarComprobanteEnForm(comp); toast('Comprobante adjuntado. Tocá Guardar.', 'ok', 2500); return;
+  }
+  abrirForm('Gastos', null, { fijos: { comprobante: comp }, vals: esPdf ? { fecha: hoy(), categoria: 'Tarjeta de crédito', descripcion: 'Resumen de tarjeta', medio: 'debito' } : { fecha: hoy() }, titulo: esPdf ? 'gasto con resumen adjunto' : 'gasto con ticket' });
+  mostrarComprobanteEnForm(comp);
+  setTimeout(() => { const i = $('#f-monto'); if (i) i.focus(); }, 100);
+}
+async function urlComprobante(comp) {
+  if (!comp) return null;
+  if (/^https?:/.test(comp)) return comp;
+  const r = await IDB.get(String(comp).replace(/^local:/, '')).catch(() => null);
+  return r ? URL.createObjectURL(r.blob) : null;
+}
+async function mostrarComprobanteEnForm(comp) {
+  const body = $('#sheet-body'); if (!body) return;
+  let box = $('#comp-prev', body);
+  if (!box) { box = document.createElement('div'); box.id = 'comp-prev'; box.className = 'comp-prev'; body.prepend(box); }
+  const local = String(comp).startsWith('local:') ? await IDB.get(comp.slice(6)).catch(() => null) : null;
+  const url = await urlComprobante(comp);
+  if (local && local.tipo && local.tipo.startsWith('image/')) box.innerHTML = `<img src="${url}" alt="Comprobante"><div class="small muted">📎 Comprobante adjunto</div>`;
+  else box.innerHTML = `<button type="button" class="btn sm" data-ver-comp="${esc(comp)}">📎 Ver comprobante${local ? ' (PDF)' : ''}</button>`;
+}
+async function verComprobante(comp) {
+  const url = await urlComprobante(comp);
+  if (!url) return toast('Este comprobante está guardado en otro celular o se borró de este.', 'warn', 4000);
+  window.open(url, '_blank', 'noopener');
+}
+/** Sube el comprobante a Google Drive (si el script lo permite) y guarda el enlace en el gasto. */
+async function subirComprobante(gastoId) {
+  const g = S.data.Gastos.find(x => x.id === gastoId);
+  if (!g || !String(g.comprobante || '').startsWith('local:') || !S.cfg.scriptUrl || (S.quotes.meta.scriptVersion || 1) < 7) return;
+  const r = await IDB.get(g.comprobante.slice(6)).catch(() => null); if (!r) return;
+  const b64 = await new Promise(ok => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(',')[1]); fr.readAsDataURL(r.blob); });
+  try {
+    const j = await llamarScript(null, { archivo: { nombre: `${g.fecha} ${g.descripcion}`.replace(/[\\/:*?"<>|]/g, '-').slice(0, 80) + (r.tipo === 'application/pdf' ? '.pdf' : '.jpg'), tipo: r.tipo, datos: b64 } });
+    if (j.url) { HIST.aplicando = true; try { guardarFila('Gastos', { ...S.data.Gastos.find(x => x.id === gastoId), comprobante: j.url }, { render: false }); } finally { HIST.aplicando = false; } }
+  } catch (e) { /* queda guardado en el celular; se reintenta la próxima vez */ }
+}
+function botonesComprobante() {
+  return `<div class="comp-bar"><button class="btn" data-foto>📷 Foto de ticket</button><button class="btn" data-adjuntar>📎 Resumen o archivo</button></div>`;
+}
+
 /* ---------- Comida: presupuesto del período y compras del día a día (como la columna "COMIDA" de la planilla) ---------- */
 function cardComida(c, diasRest) {
   const m = v => fmtMon(v, 'ARS');
@@ -1322,6 +1405,7 @@ function renderMes() {
 
   $('#v-mes').innerHTML = `
     ${bannersAlerta(false)}
+    ${botonesComprobante()}
     <div class="mes-grid"><div class="mes-col">
     <div class="card card-pend"><h2>⏳ Falta pagar hasta el cobro<span class="sp"></span><span class="mid num neg">${m(pe.total)}</span></h2>
       <div class="small" style="margin:-4px 0 8px">Tenés ${m(t.total)} en pesos · cuando pagues todo te ${sobra >= 0 ? `sobran <b class="pos">${m(sobra)}</b>` : `faltan <b class="neg">${m(-sobra)}</b>`} hasta el cobro (${fmtDM(c.cobro)}).</div>
@@ -1384,7 +1468,7 @@ function renderMes() {
 
     <div class="seg" role="group" aria-label="Período">${[['hoy', 'Hoy'], ['semana', '7 días'], ['mes', 'Mes']].map(([v, tx]) => `<button data-periodo-mes="${v}" aria-pressed="${p === v}">${tx}</button>`).join('')}</div>
     <div class="card"><h2>✅ Gastado y pagado · ${{ hoy: 'hoy', semana: '7 días', mes: nombreMes }[p]}<span class="sp"></span><span class="mid num">${m(gastadoPer)}</span></h2>
-      <div class="list">${gastosPer.slice(0, 40).map(g => `<button class="item" data-edit="Gastos" data-id="${esc(g.id)}"><div class="main"><div class="t">${esc(g.descripcion)}</div><div class="s">${fmtDM(g.fecha)} · ${esc(g.categoria)} · ${esc(MEDIOS[g.medio] || '')}</div></div><div class="r"><div class="a num">${fmtMon(+g.monto, g.moneda)}</div></div></button>`).join('') || empty('Todavía no cargaste gastos en este período.')}</div>
+      <div class="list">${gastosPer.slice(0, 40).map(g => `<button class="item" data-edit="Gastos" data-id="${esc(g.id)}"><div class="main"><div class="t">${g.comprobante ? '📎 ' : ''}${esc(g.descripcion)}</div><div class="s">${fmtDM(g.fecha)} · ${esc(g.categoria)} · ${esc(MEDIOS[g.medio] || '')}</div></div><div class="r"><div class="a num">${fmtMon(+g.monto, g.moneda)}</div></div></button>`).join('') || empty('Todavía no cargaste gastos en este período.')}</div>
       ${p === 'mes' && pagadosVenc.length ? `<p class="small muted" style="margin:8px 0 0">Vencimientos pagados: ${pagadosVenc.map(v => esc(v.concepto)).join(', ')}.</p>` : ''}</div>
 
     <div class="card"><h2>⬇️ Cobrado este mes<span class="sp"></span><span class="mid num">${m(sum(ingresosMes, i => toARS(i.monto, i.moneda)))}</span></h2>
@@ -1701,11 +1785,11 @@ function renderGastos() {
   const fijos = sum(pers.filter(g => g.fijo === 'si'), g => toARS(g.monto, g.moneda));
   const presu = +S.cfg.presupuesto || 0, pct = presu ? (total + cuotasMes) / presu * 100 : NaN, nv = Sem.gasto(pct);
   const porMedio = Object.keys(MEDIOS).map(m => [m, sum(items.filter(g => g.medio === m), g => toARS(g.monto, g.moneda))]).filter(x => x[1] > 0);
-  el.innerHTML = `${seg}${pasoMes('mesGas')}
+  el.innerHTML = `${botonesComprobante()}${seg}${pasoMes('mesGas')}
     <div class="card"><h2>Gasto personal del mes<span class="sp"></span>${pill(nv)}</h2><div class="big num">${fmtV(total + cuotasMes)}</div>
       <div class="small muted">Compras ${fmtV(total)} · cuotas ${fmtV(cuotasMes)} · fijos ${fmtV(fijos)}${presu ? ` · presupuesto ${fmtV(presu)} (${fmtPct(pct, 0)})` : ''}</div>${presu ? barra(pct, nv) : ''}
       ${porMedio.length ? `<div class="legend">${porMedio.map(([m, v]) => `<span><span class="tag">${MEDIOS[m]}</span>${fmtV(v)}</span>`).join('')}</div>` : ''}</div>
-    <div class="card"><h2>Movimientos</h2><div class="list">${items.map(g => `<button class="item" data-edit="Gastos" data-id="${esc(g.id)}"><div class="main"><div class="t">${esc(g.descripcion)}</div><div class="s">${fmtFecha(g.fecha)} · <span class="tag">${esc(g.categoria)}</span><span class="tag">${MEDIOS[g.medio] || ''}</span>${g.ambito === 'negocio' ? `<span class="tag">Negocio${g.devuelto === 'si' ? ' · devuelto' : ''}</span>` : ''}${g.fijo === 'si' ? '<span class="tag">Fijo</span>' : ''}</div></div><div class="r"><div class="a num">${fmtMon(+g.monto, g.moneda)}</div></div></button>`).join('') || empty('Sin gastos este mes. Tocá + para cargar uno.')}</div></div>
+    <div class="card"><h2>Movimientos</h2><div class="list">${items.map(g => `<button class="item" data-edit="Gastos" data-id="${esc(g.id)}"><div class="main"><div class="t">${g.comprobante ? '📎 ' : ''}${esc(g.descripcion)}</div><div class="s">${fmtFecha(g.fecha)} · <span class="tag">${esc(g.categoria)}</span><span class="tag">${MEDIOS[g.medio] || ''}</span>${g.ambito === 'negocio' ? `<span class="tag">Negocio${g.devuelto === 'si' ? ' · devuelto' : ''}</span>` : ''}${g.fijo === 'si' ? '<span class="tag">Fijo</span>' : ''}</div></div><div class="r"><div class="a num">${fmtMon(+g.monto, g.moneda)}</div></div></button>`).join('') || empty('Sin gastos este mes. Tocá + para cargar uno.')}</div></div>
     <p class="small muted">Las compras en cuotas se cargan en la pestaña Cuotas.</p>`;
 }
 
@@ -2135,7 +2219,10 @@ function abrirForm(hoja, row = null, extra = {}) {
   let html = '<form id="form-fila" novalidate><div class="formerr"></div><div class="grid2">';
   for (const c of def.campos) html += campoHTML(c, vals[c.n]);
   html += `</div><div class="btns" style="margin-top:6px"><button type="submit" class="btn pri">Guardar</button>${row && row.id ? '<button type="button" class="btn danger" data-action="borrar-fila">Borrar</button>' : ''}</div></form>`;
+  if (hoja === 'Gastos') html = html.replace('<div class="btns" style="margin-top:6px">', '<div class="btns" style="margin-top:6px"><button type="button" class="btn" data-adjuntar-form>📎 Adjuntar comprobante</button>');
   $('#sheet-body').innerHTML = html;
+  const compForm = hoja === 'Gastos' && ((extra.fijos && extra.fijos.comprobante) || (row && row.comprobante));
+  if (compForm) mostrarComprobanteEnForm(compForm);
   actualizarVisibles();
   $('#sheet').hidden = false;
   document.body.style.overflow = 'hidden';
@@ -2211,6 +2298,7 @@ function enviarForm() {
     cerrarForm(); toast('Vendiste todo: la tenencia se borró.', 'ok', 3000); return;
   }
   guardarFila(hoja, final);
+  if (hoja === 'Gastos' && String(final.comprobante || '').startsWith('local:')) subirComprobante(final.id);
   cerrarForm();
   toast('Guardado ✓' + (S.cfg.scriptUrl ? '' : ' (en el dispositivo)'), 'ok', 2200);
 }
@@ -2247,6 +2335,10 @@ document.addEventListener('click', e => {
     if (confirm(`¿Saltear "${it.concepto}" en este período?`)) omitirEnPeriodo(it.k, it.concepto, it.ars);
     return;
   }
+  if ('foto' in ds) { modoAdjunto = 'nuevo'; $('#in-foto').value = ''; $('#in-foto').click(); return; }
+  if ('adjuntar' in ds) { modoAdjunto = 'nuevo'; $('#in-archivo').value = ''; $('#in-archivo').click(); return; }
+  if ('adjuntarForm' in ds) { modoAdjunto = 'form'; $('#in-archivo').value = ''; $('#in-archivo').click(); return; }
+  if (ds.verComp) { verComprobante(ds.verComp); return; }
   if (ds.borrarGasto) { const g = S.data.Gastos.find(x => x.id === ds.borrarGasto); if (g && confirm(`¿Borrar "${g.descripcion}" (${fmtMon(+g.monto, g.moneda)})?`)) { borrarFila('Gastos', g.id); toast('Borrado. Podés deshacerlo con ↶.', 'ok', 2500); } return; }
   if ('crearComida' in ds) { abrirForm('Vencimientos', null, { fijos: { origen: 'plantilla', estado: 'pendiente' }, vals: { concepto: 'Comida', moneda: 'USD', monto: 500, fecha: c0Desde(), medio: 'debito' }, titulo: 'presupuesto de comida por período' }); return; }
   if ('nuevoPlan' in ds) { abrirForm('Vencimientos', null, { fijos: { origen: 'plantilla', estado: 'pendiente' }, vals: { fecha: hoy(), medio: 'debito' }, titulo: 'pago del plan mensual (solo importa el día)' }); return; }
@@ -2307,6 +2399,7 @@ document.addEventListener('submit', e => {
 });
 document.addEventListener('change', e => {
   const t = e.target;
+  if (t.id === 'in-foto' || t.id === 'in-archivo') { recibirArchivo(t.files && t.files[0]); return; }
   if (t.id === 'hist-sym') { S.ui.histSym = t.value; dibujarHistorial(t.value); return; }
   if (t.dataset.asignarInv !== undefined && t.value) { const i = S.data.Inversiones.find(x => x.id === t.dataset.asignarInv); if (i) { guardarFila('Inversiones', { ...i, balde: t.value }); toast('Inversión asignada ✓', 'ok', 2000); } return; }
   if (t.dataset.asignar !== undefined && t.value) { const i = S.data.Ingresos.find(x => x.id === t.dataset.asignar); if (i) { guardarFila('Ingresos', { ...i, balde: t.value }); toast('Ingreso asignado ✓', 'ok', 2000); } return; }
