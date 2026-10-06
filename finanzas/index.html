@@ -148,6 +148,11 @@ section.view{display:none} section.view.on{display:block}
 .banner.info{background:rgba(57,135,229,.14);border-color:var(--acc);color:#d6e7ff}
 .banner.ok{background:var(--ok-bg);border-color:var(--ok);color:#dcf7dc}
 .banner b{font-weight:800}
+.mes-grid{display:grid;gap:0 16px}
+@media (min-width:900px){.mes-grid{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);align-items:start}}
+body[data-tab=mes] main{max-width:1400px}
+.card-pend{border:1px solid var(--bad);}
+@media (max-width:700px){.card-pend .item{flex-wrap:wrap}.card-pend .item>.main{flex:1 1 100%}.card-pend .item>.r{flex:1 1 100%;max-width:none;display:flex;flex-direction:row;align-items:center;justify-content:space-between;text-align:left}.card-pend .acc-pend{margin-top:0}.card-pend .item>.r .a{white-space:nowrap}}
 .acc-pend{display:flex;gap:6px;margin-top:6px;justify-content:flex-end;flex-wrap:nowrap}
 .acc-pend .btn{width:auto;flex:0 0 auto;min-width:40px;padding:0 10px}
 .linkbtn{background:none;border:0;padding:0;color:var(--acc);font:inherit;text-decoration:underline;cursor:pointer}
@@ -327,7 +332,7 @@ const LS = {
 /** Versión mínima del script de Google que necesita esta app (ver apps-script/Code.gs). */
 const VERSION_SCRIPT_MIN = 5;
 /** Versión visible de la app (se ve en Más). Cambiarla junto con VERSION en sw.js. */
-const APP_VERSION = '2026-10-06.3';
+const APP_VERSION = '2026-10-06.4';
 const HOJAS = ['Ingresos', 'Gastos', 'Cuotas', 'Inversiones', 'Vencimientos', 'Objetivos', 'Historial'];
 const NUMERICOS = ['monto', 'montoCuota', 'cuotasTotales', 'cantidad', 'precioCompra', 'tcCompra', 'meta', 'saldoInicial', 'patrimonioARS', 'patrimonioUSD', 'dolar'];
 const TARJETAS = ['visa', 'mastercard'];
@@ -1000,6 +1005,7 @@ function renderNav() {
 }
 function irA(tab) {
   S.ui.tab = tab;
+  document.body.dataset.tab = tab;
   $$('section.view').forEach(s => s.classList.toggle('on', s.id === 'v-' + tab));
   $('#titulo').textContent = TABS[tab];
   $('#fab').hidden = !FAB_HOJA[tab];
@@ -1239,7 +1245,10 @@ function renderMes() {
   const desde = p === 'hoy' ? hoyS : p === 'semana' ? addDays(hoyS, -6) : c.desde;
   const gastosPer = S.data.Gastos.filter(g => g.ambito !== 'negocio' && g.fecha >= desde && g.fecha <= hoyS).sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
   const gastadoPer = sum(gastosPer, g => toARS(g.monto, g.moneda));
-  const gastadoHoy = sum(S.data.Gastos.filter(g => g.ambito !== 'negocio' && g.fecha === hoyS), g => toARS(g.monto, g.moneda));
+  const clavesPlanHoy = planDePagos().map(x => x.k);
+  const esDiaADia = g => g.fijo !== 'si' && g.categoria !== 'Tarjeta de crédito' && !clavesPlanHoy.some(k => coincidePlan(g, k));
+  // "Gastado hoy" cuenta solo el día a día: los pagos del plan (alquiler, comida, servicios…) ya están en "Falta pagar"
+  const gastadoHoy = sum(S.data.Gastos.filter(g => g.ambito !== 'negocio' && g.fecha === hoyS && esDiaADia(g)), g => toARS(g.monto, g.moneda));
   const ingresosMes = S.data.Ingresos.filter(i => enCiclo(i.fecha, c));
   const todosV = vencimientosTodos();
   const pagadosVenc = todosV.filter(v => v.estado === 'pagado' && enCiclo(v.fecha, c));
@@ -1265,30 +1274,9 @@ function renderMes() {
 
   $('#v-mes').innerHTML = `
     ${bannersAlerta(false)}
-    <div class="card"><h2>💵 Sobrante hasta el cobro<span class="sp"></span>${pill(nivel)}</h2>
-      <div class="small muted" style="margin:-4px 0 6px">Como la celda "Sobra" (F33): lo que tenés (con la reserva) menos lo que falta pagar. Período del ${fmtDM(c.desde)} al ${fmtDM(c.hasta)} · ${diasCobro <= 0 ? 'hoy cobrás' : `cobrás el ${fmtDM(c.cobro)} (en ${diasCobro} día${diasCobro === 1 ? '' : 's'})`}.</div>
-      <div class="big num ${sobra >= 0 ? 'pos' : 'neg'}">${m(sobra)}</div>
-      ${dolar() ? `<div class="small muted">≈ ${fmtMon(sobra / dolar(), 'USD')}</div>` : ''}
-      <div class="list" style="margin-top:8px">
-        ${fila('Tengo en pesos', m(t.total), t.items.length ? (reserva > 0 ? `incluye la reserva hasta el cobro: ${m(reserva)} (${t.items.filter(i => i.tipo === 'fci').map(i => esc(i.activo)).join(', ')})` : t.items.map(i => esc(i.activo)).join(' · ')) : '<b>Cargá cuánto tenés hoy</b> en "Tus cuentas en pesos" (abajo)')}
-        ${fila('− Falta pagar hasta el cobro', m(peSin.total), `${peSin.items.length} pago(s) pendiente(s)`)}
-        ${fila('<b>= Sobra</b>', `<b class="${sobra >= 0 ? 'pos' : 'neg'}">${m(sobra)}</b>`)}
-      </div>
-      ${ahorroPend > 0 ? `<p class="small" style="margin:10px 0 0">🐷 Si además separás la cuota de ahorro (${m(ahorroPend)}), te quedan <b class="${disponible >= 0 ? 'pos' : 'neg'}">${m(disponible)}</b>.</p>` : ''}
-      <div class="row2" style="margin-top:12px">
-        <div class="stat"><div class="l">Podés gastar por día</div><div class="v num">${m(Math.max(porDia, 0))}</div><div class="small muted">${diasRest} día(s) hasta el cobro${ahorroPend > 0 ? ', ya separando el ahorro' : ''}</div></div>
-        <div class="stat"><div class="l">Gastado hoy</div><div class="v num ${gastadoHoy > Math.max(porDia, 0) ? 'neg' : ''}">${m(gastadoHoy)}</div><div class="small muted">por semana: ${m(Math.max(porSemana, 0))}</div></div>
-      </div>
-      ${!t.items.length ? '<div class="btns" style="margin-top:10px"><button class="btn pri" data-nueva-inv="liquidez">+ Cargar lo que tengo hoy</button></div>' : ''}
-      <p class="small muted" style="margin:10px 0 0">Cuando cobres, cargá el sueldo en Ingresos y actualizá tus cuentas: ahí empieza el período nuevo.</p>
-    </div>
-
-    <div class="card"><h2>🏦 Tus cuentas en pesos<span class="sp"></span><button class="btn sm" data-nueva-inv="liquidez">+ Cuenta</button></h2>
-      <div class="list">${t.items.map(i => `<button class="item" data-edit="Inversiones" data-id="${esc(i.id)}"><div class="main"><div class="t">${esc(i.activo)}</div><div class="s">${esc(i.plataforma || '')} · saldo del ${fmtHora(i.actualizado)} · tocá para actualizar</div></div><div class="r"><div class="a num">${m(+i.cantidad || 0)}</div></div></button>`).join('') || empty('Agregá tus cuentas en pesos (Galicia, Mercado Pago, efectivo…) con el botón + Cuenta.')}</div>
-      ${t.menos || t.mas ? `<p class="small muted" style="margin:8px 0 0">Desde la última actualización de saldos: −${m(t.menos)} en gastos y pagos, +${m(t.mas)} en ingresos. Saldo estimado: <b>${m(t.total)}</b>.</p>` : ''}
-    </div>
-
-    <div class="card"><h2>⏳ Falta pagar hasta el cobro<span class="sp"></span><span class="mid num neg">${m(pe.total)}</span></h2>
+    <div class="mes-grid"><div class="mes-col">
+    <div class="card card-pend"><h2>⏳ Falta pagar hasta el cobro<span class="sp"></span><span class="mid num neg">${m(pe.total)}</span></h2>
+      <div class="small" style="margin:-4px 0 8px">Tenés ${m(t.total)} en pesos · cuando pagues todo te ${sobra >= 0 ? `sobran <b class="pos">${m(sobra)}</b>` : `faltan <b class="neg">${m(-sobra)}</b>`} hasta el cobro (${fmtDM(c.cobro)}).</div>
       <div class="list">${pe.items.map(i => {
         const esPlan = String(i.k || '').startsWith('plan:'), idPlan = esPlan ? i.k.slice(5) : '';
         const editar = i.venc ? `data-venc-edit ${keyV(i.venc)}` : esPlan ? `data-edit="Vencimientos" data-id="${esc(idPlan)}"` : `data-pagar-fijo="${esc(i.k)}"`;
@@ -1301,15 +1289,33 @@ function renderMes() {
       }).join('') || empty('No falta pagar nada en este período. 🎉')}</div>
       <p class="small muted" style="margin:8px 0 0"><span class="neg">Rojo</span>: lo que debés. <span class="alerta">Naranja</span>: vence en 3 días o menos. ✏️ cambia el monto (por ejemplo, el alquiler con el ajuste). 🗑 lo saca de este período. Todo se deshace con ↶.</p></div>
 
+    <div class="card"><h2>✔️ Ya pagado en el período (${pagosHechos.length})</h2>
+      <div class="list">${pagosHechos.map(x => x.html).join('') || empty('Todavía no marcaste pagos este mes.')}</div>
+      <p class="small muted" style="margin:8px 0 0">¿Lo marcaste por error? Tocá "↩ Deshacer" y vuelve a "Falta pagar". Tocá el nombre para cambiar monto o fecha.</p></div>
+
     <div class="card"><h2>📋 Plan de pagos del período<span class="sp"></span><button class="btn sm" data-nuevo-plan>+ Pago</button></h2>
       ${planMes.length ? `<div class="list">${planMes.map(x => filaBtn(`data-edit="Vencimientos" data-id="${esc(x.v.id)}"`, esc(x.v.concepto), x.falta > 0 ? `<span class="neg">${m(x.falta)}</span>` : '<span class="pos">✓ pagado</span>', `Plan ${m(x.plan)} · <span class="pos">pagado ${m(x.pagado)}</span> · día ${fmtDM(x.fecha)} · tocá para cambiar el monto`)).join('')}</div>
         <div class="row2" style="margin-top:10px"><div class="stat"><div class="l">Plan del mes</div><div class="v num">${m(sum(planMes, x => x.plan))}</div></div><div class="stat"><div class="l">Falta pagar del plan</div><div class="v num">${m(sum(planMes, x => x.falta))}</div></div></div>
         <p class="small muted" style="margin:8px 0 0">Como las columnas "Pagar" y "Pendiente" de tu planilla. Lo pagado sale de los gastos del mes con el mismo nombre ("Comida" toma Supermercado). Tocá un pago para cambiar el monto.</p>`
         : '<p class="small muted" style="margin:0">Cargá tus pagos de todos los meses (alquiler, servicios, comida…) con "+ Pago". Mientras tanto se estiman con lo que pagaste el mes pasado.</p>'}</div>
-
-    <div class="card"><h2>✔️ Ya pagado en el período (${pagosHechos.length})</h2>
-      <div class="list">${pagosHechos.map(x => x.html).join('') || empty('Todavía no marcaste pagos este mes.')}</div>
-      <p class="small muted" style="margin:8px 0 0">¿Lo marcaste por error? Tocá "↩ Deshacer" y vuelve a "Falta pagar". Tocá el nombre para cambiar monto o fecha.</p></div>
+    </div><div class="mes-col">
+    <div class="card"><h2>💵 Sobrante hasta el cobro<span class="sp"></span>${pill(nivel)}</h2>
+      <div class="small muted" style="margin:-4px 0 6px">Como la celda "Sobra" (F33): lo que tenés (con la reserva) menos lo que falta pagar. Período del ${fmtDM(c.desde)} al ${fmtDM(c.hasta)} · ${diasCobro <= 0 ? 'hoy cobrás' : `cobrás el ${fmtDM(c.cobro)} (en ${diasCobro} día${diasCobro === 1 ? '' : 's'})`}.</div>
+      <div class="big num ${sobra >= 0 ? 'pos' : 'neg'}">${m(sobra)}</div>
+      ${dolar() ? `<div class="small muted">≈ ${fmtMon(sobra / dolar(), 'USD')}</div>` : ''}
+      <div class="list" style="margin-top:8px">
+        ${fila('Tengo en pesos', m(t.total), t.items.length ? (reserva > 0 ? `incluye la reserva hasta el cobro: ${m(reserva)} (${t.items.filter(i => i.tipo === 'fci').map(i => esc(i.activo)).join(', ')})` : t.items.map(i => esc(i.activo)).join(' · ')) : '<b>Cargá cuánto tenés hoy</b> en "Tus cuentas en pesos" (abajo)')}
+        ${fila('− Falta pagar hasta el cobro', m(peSin.total), `${peSin.items.length} pago(s) pendiente(s)`)}
+        ${fila('<b>= Sobra</b>', `<b class="${sobra >= 0 ? 'pos' : 'neg'}">${m(sobra)}</b>`)}
+      </div>
+      ${ahorroPend > 0 ? `<p class="small" style="margin:10px 0 0">🐷 Si además separás la cuota de ahorro (${m(ahorroPend)}), te quedan <b class="${disponible >= 0 ? 'pos' : 'neg'}">${m(disponible)}</b>.</p>` : ''}
+      <div class="row2" style="margin-top:12px">
+        <div class="stat"><div class="l">Podés gastar por día</div><div class="v num">${m(Math.max(porDia, 0))}</div><div class="small muted">${diasRest} día(s) hasta el cobro${ahorroPend > 0 ? ', ya separando el ahorro' : ''}</div></div>
+        <div class="stat"><div class="l">Gastado hoy (día a día)</div><div class="v num ${gastadoHoy > Math.max(porDia, 0) ? 'neg' : ''}">${m(gastadoHoy)}</div><div class="small muted">podés por semana: ${m(Math.max(porSemana, 0))}</div></div>
+      </div>
+      ${!t.items.length ? '<div class="btns" style="margin-top:10px"><button class="btn pri" data-nueva-inv="liquidez">+ Cargar lo que tengo hoy</button></div>' : ''}
+      <p class="small muted" style="margin:10px 0 0">Cuando cobres, cargá el sueldo en Ingresos y actualizá tus cuentas: ahí empieza el período nuevo.</p>
+    </div>
 
     <div class="card"><h2>🐷 Cuota de ahorro del mes${ahorro ? `<span class="sp"></span>${pill(ahorro.estado === 'pagado' ? 'ok' : ahorro.fecha < hoyS ? 'bad' : 'warn')}` : ''}</h2>
       ${ahorro && +ahorro.monto > 0 ? `<div class="big num">${m(+ahorro.monto)}</div><div class="small muted">${ahorro.estado === 'pagado' ? 'Ya la separaste este mes. ¡Bien!' : `Separala apenas cobres (antes del ${fmtDM(ahorro.fecha)}) y tocá "✓ Separado" arriba.`}</div>
@@ -1321,6 +1327,11 @@ function renderMes() {
       ${fila('Cuotas que quedan', m(sum(cuotasRest, x => x.ars)), cuotasRest.length ? `${cuotasRest.length} cuota(s) · la última en ${fmtMesCorto(cuotasRest.map(x => x.ym).sort().pop())}` : 'No te quedan cuotas')}
       </div>${topeT > 0 ? barra(tj / topeT * 100, tj > topeT ? 'bad' : tj >= topeT * 0.8 ? 'warn' : 'ok') : ''}</div>
 
+    <div class="card"><h2>🏦 Tus cuentas en pesos<span class="sp"></span><button class="btn sm" data-nueva-inv="liquidez">+ Cuenta</button></h2>
+      <div class="list">${t.items.map(i => `<button class="item" data-edit="Inversiones" data-id="${esc(i.id)}"><div class="main"><div class="t">${esc(i.activo)}</div><div class="s">${esc(i.plataforma || '')} · saldo del ${fmtHora(i.actualizado)} · tocá para actualizar</div></div><div class="r"><div class="a num">${m(+i.cantidad || 0)}</div></div></button>`).join('') || empty('Agregá tus cuentas en pesos (Galicia, Mercado Pago, efectivo…) con el botón + Cuenta.')}</div>
+      ${t.menos || t.mas ? `<p class="small muted" style="margin:8px 0 0">Desde la última actualización de saldos: −${m(t.menos)} en gastos y pagos, +${m(t.mas)} en ingresos. Saldo estimado: <b>${m(t.total)}</b>.</p>` : ''}
+    </div>
+
     <div class="seg" role="group" aria-label="Período">${[['hoy', 'Hoy'], ['semana', '7 días'], ['mes', 'Mes']].map(([v, tx]) => `<button data-periodo-mes="${v}" aria-pressed="${p === v}">${tx}</button>`).join('')}</div>
     <div class="card"><h2>✅ Gastado y pagado · ${{ hoy: 'hoy', semana: '7 días', mes: nombreMes }[p]}<span class="sp"></span><span class="mid num">${m(gastadoPer)}</span></h2>
       <div class="list">${gastosPer.slice(0, 40).map(g => `<button class="item" data-edit="Gastos" data-id="${esc(g.id)}"><div class="main"><div class="t">${esc(g.descripcion)}</div><div class="s">${fmtDM(g.fecha)} · ${esc(g.categoria)} · ${esc(MEDIOS[g.medio] || '')}</div></div><div class="r"><div class="a num">${fmtMon(+g.monto, g.moneda)}</div></div></button>`).join('') || empty('Todavía no cargaste gastos en este período.')}</div>
@@ -1328,6 +1339,7 @@ function renderMes() {
 
     <div class="card"><h2>⬇️ Cobrado este mes<span class="sp"></span><span class="mid num">${m(sum(ingresosMes, i => toARS(i.monto, i.moneda)))}</span></h2>
       <div class="list">${ingresosMes.map(i => `<button class="item" data-edit="Ingresos" data-id="${esc(i.id)}"><div class="main"><div class="t">${esc(i.concepto)}</div><div class="s">${fmtDM(i.fecha)}</div></div><div class="r"><div class="a num">${fmtMon(+i.monto, i.moneda)}</div></div></button>`).join('') || empty('Todavía no cargaste ingresos este mes.')}</div></div>
+    </div></div>
     <p class="small muted" style="text-align:center">Inversiones y objetivos están en Más. Esta pantalla es solo la plata del mes.</p>`;
 }
 /** Dinero disponible: cuentas y efectivo cargados en Inversiones como "Dinero disponible". */
