@@ -149,6 +149,13 @@ section.view{display:none} section.view.on{display:block}
 .banner.ok{background:var(--ok-bg);border-color:var(--ok);color:#dcf7dc}
 .banner b{font-weight:800}
 .mes-grid{display:grid;gap:0 16px}
+.row3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:10px}
+.row3 .v{font-size:clamp(14px,4.2vw,20px);white-space:nowrap}
+.comida-form{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.comida-form input{height:46px;border-radius:12px;background:var(--card2);border:1px solid var(--line);color:var(--txt);padding:0 12px;font-size:16px;min-width:0}
+.comida-form .btn{grid-column:1 / -1}
+@media (min-width:700px){.comida-form{grid-template-columns:1.2fr 1.5fr 1fr auto}.comida-form .btn{grid-column:auto}}
+.card-comida{border:1px solid #ff9f43}
 @media (min-width:900px){.mes-grid{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);align-items:start}}
 body[data-tab=mes] main{max-width:1400px}
 .card-pend{border:1px solid var(--bad);}
@@ -332,7 +339,7 @@ const LS = {
 /** Versión mínima del script de Google que necesita esta app (ver apps-script/Code.gs). */
 const VERSION_SCRIPT_MIN = 5;
 /** Versión visible de la app (se ve en Más). Cambiarla junto con VERSION en sw.js. */
-const APP_VERSION = '2026-10-06.4';
+const APP_VERSION = '2026-10-07.1';
 const HOJAS = ['Ingresos', 'Gastos', 'Cuotas', 'Inversiones', 'Vencimientos', 'Objetivos', 'Historial'];
 const NUMERICOS = ['monto', 'montoCuota', 'cuotasTotales', 'cantidad', 'precioCompra', 'tcCompra', 'meta', 'saldoInicial', 'patrimonioARS', 'patrimonioUSD', 'dolar'];
 const TARJETAS = ['visa', 'mastercard'];
@@ -1166,6 +1173,7 @@ const enCiclo = (f, c) => !!f && f >= c.desde && f <= c.hasta;
 /** Fecha dentro del período para un pago que vence el día "dia" de cada mes. */
 const fechaEnCiclo = (c, dia) => { const f = dateInMonth(c.key, dia); return f >= c.desde ? f : dateInMonth(addMonths(c.key, 1), dia); };
 const finDeMes = () => cicloActual().hasta;
+const c0Desde = () => cicloActual().desde;
 /* ---------- Plan de pagos del mes (como las columnas "Pagar" y "Pendiente" de la planilla) ----------
  * Cada pago planificado se guarda en Vencimientos con origen "plantilla" (monto del mes y día).
  * Lo pagado se toma de los gastos del mes con el mismo nombre (o categoría); falta = plan − pagado.
@@ -1227,6 +1235,46 @@ function pendienteDelMes() {
   items.sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
   return { items, total: sum(items, i => i.ars) };
 }
+/* ---------- Comida: presupuesto del período y compras del día a día (como la columna "COMIDA" de la planilla) ---------- */
+function cardComida(c, diasRest) {
+  const m = v => fmtMon(v, 'ARS');
+  const pc = planDePagos().find(x => x.k === 'comida');
+  const compras = S.data.Gastos.filter(g => g.ambito !== 'negocio' && enCiclo(g.fecha, c) && coincidePlan(g, 'comida')).sort((a, b) => (a.fecha < b.fecha ? 1 : a.fecha > b.fecha ? -1 : (a.actualizado < b.actualizado ? 1 : -1)));
+  const hoyS = hoy(), deHoy = sum(compras.filter(g => g.fecha === hoyS), g => toARS(g.monto, g.moneda));
+  const porDia = new Map(); for (const g of compras) { const d = porDia.get(g.fecha) || []; d.push(g); porDia.set(g.fecha, d); }
+  const form = `<form id="form-comida" class="comida-form" novalidate>
+      <input id="c-monto" type="text" inputmode="decimal" placeholder="Monto ($)" aria-label="Monto de la compra" autocomplete="off">
+      <input id="c-nota" type="text" placeholder="Detalle (opcional)" aria-label="Detalle" maxlength="60" autocomplete="off">
+      <input id="c-fecha" type="date" value="${hoyS}" aria-label="Fecha">
+      <button type="submit" class="btn pri">+ Cargar</button></form>`;
+  if (!pc) return `<div class="card"><h2>🛒 Comida</h2><p class="small muted" style="margin:0 0 10px">Definí cuánto querés gastar en comida por período y andá cargando cada compra.</p>
+      <div class="btns"><button class="btn pri" data-crear-comida>Crear presupuesto de comida</button></div></div>`;
+  const pct = pc.plan > 0 ? pc.pagado / pc.plan * 100 : 0, nivel = pc.pagado > pc.plan ? 'bad' : pct >= 85 ? 'warn' : 'ok';
+  const porDiaQueda = pc.falta / Math.max(diasRest, 1);
+  return `<div class="card card-comida"><h2>🛒 Comida<span class="sp"></span><button class="btn sm" data-edit="Vencimientos" data-id="${esc(pc.v.id)}">✏️ Presupuesto</button></h2>
+      <div class="row3">
+        <div class="stat"><div class="l">Presupuesto</div><div class="v num">${m(pc.plan)}</div></div>
+        <div class="stat"><div class="l">Gastado</div><div class="v num ${nivel === 'bad' ? 'neg' : 'alerta'}">${m(pc.pagado)}</div></div>
+        <div class="stat"><div class="l">${pc.pagado > pc.plan ? 'Te pasaste' : 'Queda'}</div><div class="v num ${pc.pagado > pc.plan ? 'neg' : 'pos'}">${m(Math.abs(pc.plan - pc.pagado))}</div></div>
+      </div>
+      ${barra(pct, nivel)}
+      <div class="small" style="margin:8px 0">Hoy: <b>${m(deHoy)}</b> · podés gastar <b class="${porDiaQueda > 0 ? 'pos' : 'neg'}">${m(Math.max(porDiaQueda, 0))}</b> por día en comida (${diasRest} día${diasRest === 1 ? '' : 's'} hasta el cobro)</div>
+      ${form}
+      <div class="list" style="margin-top:8px">${[...porDia.entries()].slice(0, 15).map(([f, gs]) => `
+        <div class="item" style="display:block"><div class="t" style="display:flex;justify-content:space-between"><span>${f === hoyS ? 'Hoy' : fmtDM(f)}</span><span class="num alerta">${m(sum(gs, g => toARS(g.monto, g.moneda)))}</span></div>
+          ${gs.map(g => `<div class="s" style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:4px"><button class="linkbtn" style="text-align:left" data-edit="Gastos" data-id="${esc(g.id)}">${esc(g.descripcion || 'Comida')} · ${fmtMon(+g.monto, g.moneda)}</button><button class="btn sm" style="min-height:32px" data-borrar-gasto="${esc(g.id)}" aria-label="Borrar compra">🗑</button></div>`).join('')}</div>`).join('') || empty('Todavía no cargaste compras de comida en este período.')}</div>
+    </div>`;
+}
+function cargarComida(f) {
+  const monto = parseNum($('#c-monto', f).value);
+  if (!(monto > 0)) { toast('Escribí el monto de la compra.', 'warn', 2500); $('#c-monto', f).focus(); return; }
+  const fecha = $('#c-fecha', f).value || hoy(), nota = $('#c-nota', f).value.trim();
+  guardarFila('Gastos', { fecha, categoria: 'Supermercado', descripcion: nota ? `Comida · ${nota}` : 'Comida', monto, moneda: 'ARS', medio: 'debito', ambito: 'personal', fijo: 'no', devuelto: 'no' });
+  const pc = planDePagos().find(x => x.k === 'comida');
+  toast(`Compra cargada ✓${pc ? ` · te quedan ${fmtMon(Math.max(pc.plan - pc.pagado, 0), 'ARS')} para comida` : ''}`, 'ok', 3000);
+  setTimeout(() => { const i = $('#c-monto'); if (i) i.focus(); }, 50);
+}
+
 /* =====================================================================
    PESTAÑA MI MES: la plata del mes actual, separada de inversiones y objetivos
    ===================================================================== */
@@ -1261,11 +1309,11 @@ function renderMes() {
   const keyV = v => (v.id ? `data-id="${esc(v.id)}"` : `data-ref="${esc(v.ref)}"`);
   const fila = (a, b, sub = '', extra = '') => `<div class="item"><div class="main"><div class="t" style="white-space:normal">${a}</div>${sub ? `<div class="s" style="white-space:normal">${sub}</div>` : ''}</div><div class="r"><div class="a num">${b}</div>${extra}</div></div>`;
   const filaBtn = (attrs, a, b, sub = '', extra = '') => `<div class="item"><button class="main" style="text-align:left" ${attrs}><div class="t" style="white-space:normal">${a}</div>${sub ? `<div class="s" style="white-space:normal">${sub}</div>` : ''}</button><div class="r"><div class="a num">${b}</div>${extra}</div></div>`;
-  const clavesPlan = planDePagos().map(x => x.k); // un gasto que cuenta como pago del plan también se puede deshacer
+  const clavesPlan = planDePagos().map(x => x.k).filter(k => k !== 'comida'); // un gasto que cuenta como pago del plan también se puede deshacer (la comida va en su tarjeta)
   // Pagos ya hechos este mes: vencimientos marcados y gastos fijos/tarjeta cargados (se pueden deshacer o editar)
   const pagosHechos = [
     ...pagadosVenc.map(v => ({ fecha: v.fecha, html: filaBtn(`data-venc-edit ${keyV(v)}`, esc(v.concepto), `<span class="pos">${fmtMon(+v.monto, v.moneda)}</span>`, `${fmtDM(v.fecha)} · ${v.origen === 'ahorro' ? 'Separado' : 'Pagado'} · tocá para editar`, `<button class="btn sm" data-despagar ${keyV(v)}>↩ Deshacer</button>`) })),
-    ...S.data.Gastos.filter(g => g.ambito !== 'negocio' && enCiclo(g.fecha, c) && (g.fijo === 'si' || g.categoria === 'Tarjeta de crédito' || clavesPlan.some(k => coincidePlan(g, k))))
+    ...S.data.Gastos.filter(g => g.ambito !== 'negocio' && enCiclo(g.fecha, c) && !coincidePlan(g, 'comida') && (g.fijo === 'si' || g.categoria === 'Tarjeta de crédito' || clavesPlan.some(k => coincidePlan(g, k))))
       .map(g => ({ fecha: g.fecha, html: filaBtn(`data-edit="Gastos" data-id="${esc(g.id)}"`, esc(g.descripcion), `<span class="pos">${fmtMon(+g.monto, g.moneda)}</span>`, `${fmtDM(g.fecha)} · ${esc(g.categoria)} · tocá para editar`, `<button class="btn sm" data-deshacer-gasto="${esc(g.id)}">↩ Deshacer</button>`) })),
   ].sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
   const planMes = planDePagos();
@@ -1288,6 +1336,8 @@ function renderMes() {
           `<div class="acc-pend">${pagar}<button class="btn sm" ${editar} aria-label="Editar ${esc(i.concepto)}">✏️</button><button class="btn sm" ${borrar} aria-label="Eliminar ${esc(i.concepto)}">🗑</button></div>`);
       }).join('') || empty('No falta pagar nada en este período. 🎉')}</div>
       <p class="small muted" style="margin:8px 0 0"><span class="neg">Rojo</span>: lo que debés. <span class="alerta">Naranja</span>: vence en 3 días o menos. ✏️ cambia el monto (por ejemplo, el alquiler con el ajuste). 🗑 lo saca de este período. Todo se deshace con ↶.</p></div>
+
+    ${cardComida(c, diasRest)}
 
     <div class="card"><h2>✔️ Ya pagado en el período (${pagosHechos.length})</h2>
       <div class="list">${pagosHechos.map(x => x.html).join('') || empty('Todavía no marcaste pagos este mes.')}</div>
@@ -2197,6 +2247,8 @@ document.addEventListener('click', e => {
     if (confirm(`¿Saltear "${it.concepto}" en este período?`)) omitirEnPeriodo(it.k, it.concepto, it.ars);
     return;
   }
+  if (ds.borrarGasto) { const g = S.data.Gastos.find(x => x.id === ds.borrarGasto); if (g && confirm(`¿Borrar "${g.descripcion}" (${fmtMon(+g.monto, g.moneda)})?`)) { borrarFila('Gastos', g.id); toast('Borrado. Podés deshacerlo con ↶.', 'ok', 2500); } return; }
+  if ('crearComida' in ds) { abrirForm('Vencimientos', null, { fijos: { origen: 'plantilla', estado: 'pendiente' }, vals: { concepto: 'Comida', moneda: 'USD', monto: 500, fecha: c0Desde(), medio: 'debito' }, titulo: 'presupuesto de comida por período' }); return; }
   if ('nuevoPlan' in ds) { abrirForm('Vencimientos', null, { fijos: { origen: 'plantilla', estado: 'pendiente' }, vals: { fecha: hoy(), medio: 'debito' }, titulo: 'pago del plan mensual (solo importa el día)' }); return; }
   if (ds.periodoMes) { S.ui.periodoMes = ds.periodoMes; renderTodo(); return; }
   if (ds.pagarFijo !== undefined) { const it = pendienteDelMes().items.find(x => x.k === ds.pagarFijo); if (it) abrirForm('Gastos', null, { vals: { ...it.gasto, fecha: hoy() }, titulo: 'gasto (confirmá el monto)' }); return; }
@@ -2250,6 +2302,7 @@ document.addEventListener('click', e => {
 document.addEventListener('submit', e => {
   e.preventDefault();
   if (e.target.id === 'form-fila') enviarForm();
+  if (e.target.id === 'form-comida') cargarComida(e.target);
   if (e.target.id === 'form-ajustes') guardarAjustes(e.target);
 });
 document.addEventListener('change', e => {
