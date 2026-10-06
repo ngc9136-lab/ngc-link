@@ -121,7 +121,7 @@ section.view{display:none} section.view.on{display:block}
 .item .s{font-size:13px;color:var(--muted);overflow-wrap:anywhere}
 .item .r{text-align:right;flex-shrink:0;display:flex;flex-direction:column;align-items:flex-end;gap:4px;max-width:52%}
 .item .a{font-weight:800;font-size:17px;overflow-wrap:anywhere}
-.pos{color:var(--ok-txt)} .neg{color:var(--bad-txt)}
+.pos{color:var(--ok-txt)} .neg{color:var(--bad-txt)} .alerta{color:#ff9f43}
 .tag{display:inline-block;font-size:11.5px;font-weight:700;border-radius:6px;padding:1px 6px;background:var(--card2);color:var(--txt2);margin-right:4px}
 .tag.ok{background:var(--ok-bg);color:var(--ok-txt)} .tag.warn{background:var(--warn-bg);color:var(--warn-txt)} .tag.bad{background:var(--bad-bg);color:var(--bad-txt)}
 .empty{color:var(--muted);text-align:center;padding:18px 8px}
@@ -327,7 +327,7 @@ const LS = {
 /** Versión mínima del script de Google que necesita esta app (ver apps-script/Code.gs). */
 const VERSION_SCRIPT_MIN = 5;
 /** Versión visible de la app (se ve en Más). Cambiarla junto con VERSION en sw.js. */
-const APP_VERSION = '2026-10-06.2';
+const APP_VERSION = '2026-10-06.3';
 const HOJAS = ['Ingresos', 'Gastos', 'Cuotas', 'Inversiones', 'Vencimientos', 'Objetivos', 'Historial'];
 const NUMERICOS = ['monto', 'montoCuota', 'cuotasTotales', 'cantidad', 'precioCompra', 'tcCompra', 'meta', 'saldoInicial', 'patrimonioARS', 'patrimonioUSD', 'dolar'];
 const TARJETAS = ['visa', 'mastercard'];
@@ -1255,9 +1255,9 @@ function renderMes() {
   const clavesPlan = planDePagos().map(x => x.k); // un gasto que cuenta como pago del plan también se puede deshacer
   // Pagos ya hechos este mes: vencimientos marcados y gastos fijos/tarjeta cargados (se pueden deshacer o editar)
   const pagosHechos = [
-    ...pagadosVenc.map(v => ({ fecha: v.fecha, html: filaBtn(`data-venc-edit ${keyV(v)}`, esc(v.concepto), fmtMon(+v.monto, v.moneda), `${fmtDM(v.fecha)} · ${v.origen === 'ahorro' ? 'Separado' : 'Pagado'} · tocá para editar`, `<button class="btn sm" data-despagar ${keyV(v)}>↩ Deshacer</button>`) })),
+    ...pagadosVenc.map(v => ({ fecha: v.fecha, html: filaBtn(`data-venc-edit ${keyV(v)}`, esc(v.concepto), `<span class="pos">${fmtMon(+v.monto, v.moneda)}</span>`, `${fmtDM(v.fecha)} · ${v.origen === 'ahorro' ? 'Separado' : 'Pagado'} · tocá para editar`, `<button class="btn sm" data-despagar ${keyV(v)}>↩ Deshacer</button>`) })),
     ...S.data.Gastos.filter(g => g.ambito !== 'negocio' && enCiclo(g.fecha, c) && (g.fijo === 'si' || g.categoria === 'Tarjeta de crédito' || clavesPlan.some(k => coincidePlan(g, k))))
-      .map(g => ({ fecha: g.fecha, html: filaBtn(`data-edit="Gastos" data-id="${esc(g.id)}"`, esc(g.descripcion), fmtMon(+g.monto, g.moneda), `${fmtDM(g.fecha)} · ${esc(g.categoria)} · tocá para editar`, `<button class="btn sm" data-deshacer-gasto="${esc(g.id)}">↩ Deshacer</button>`) })),
+      .map(g => ({ fecha: g.fecha, html: filaBtn(`data-edit="Gastos" data-id="${esc(g.id)}"`, esc(g.descripcion), `<span class="pos">${fmtMon(+g.monto, g.moneda)}</span>`, `${fmtDM(g.fecha)} · ${esc(g.categoria)} · tocá para editar`, `<button class="btn sm" data-deshacer-gasto="${esc(g.id)}">↩ Deshacer</button>`) })),
   ].sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
   const planMes = planDePagos();
   const nombreMes = `${fmtDM(c.desde)} al ${fmtDM(c.hasta)}`;
@@ -1288,19 +1288,21 @@ function renderMes() {
       ${t.menos || t.mas ? `<p class="small muted" style="margin:8px 0 0">Desde la última actualización de saldos: −${m(t.menos)} en gastos y pagos, +${m(t.mas)} en ingresos. Saldo estimado: <b>${m(t.total)}</b>.</p>` : ''}
     </div>
 
-    <div class="card"><h2>⏳ Falta pagar hasta el cobro<span class="sp"></span><span class="mid num">${m(pe.total)}</span></h2>
+    <div class="card"><h2>⏳ Falta pagar hasta el cobro<span class="sp"></span><span class="mid num neg">${m(pe.total)}</span></h2>
       <div class="list">${pe.items.map(i => {
         const esPlan = String(i.k || '').startsWith('plan:'), idPlan = esPlan ? i.k.slice(5) : '';
         const editar = i.venc ? `data-venc-edit ${keyV(i.venc)}` : esPlan ? `data-edit="Vencimientos" data-id="${esc(idPlan)}"` : `data-pagar-fijo="${esc(i.k)}"`;
         const borrar = i.venc ? `data-borrar-pend="venc" ${keyV(i.venc)}` : `data-borrar-pend="${esPlan ? 'plan' : 'fijo'}" data-k="${esc(i.k)}"`;
         const pagar = i.venc ? `<button class="btn sm okb" data-pagar ${keyV(i.venc)}>${i.venc.origen === 'ahorro' ? '✓ Separado' : '✓ Pagado'}</button>` : `<button class="btn sm okb" data-pagar-fijo="${esc(i.k)}">✓ Pagado</button>`;
-        return filaBtn(editar, esc(i.concepto), m(i.ars), `${fmtDM(i.fecha)} · ${i.origen}`,
+        const dias = diffDays(hoyS, i.fecha), alerta = dias <= 3;
+        const cuando = dias < 0 ? `⚠ venció hace ${-dias} día${dias === -1 ? '' : 's'}` : dias === 0 ? '⚠ vence hoy' : alerta ? `⚠ vence en ${dias} día${dias === 1 ? '' : 's'}` : fmtDM(i.fecha);
+        return filaBtn(editar, esc(i.concepto), `<span class="${alerta ? 'alerta' : 'neg'}">${m(i.ars)}</span>`, `<span class="${alerta ? 'alerta' : ''}">${cuando}</span> · ${i.origen}`,
           `<div class="acc-pend">${pagar}<button class="btn sm" ${editar} aria-label="Editar ${esc(i.concepto)}">✏️</button><button class="btn sm" ${borrar} aria-label="Eliminar ${esc(i.concepto)}">🗑</button></div>`);
       }).join('') || empty('No falta pagar nada en este período. 🎉')}</div>
-      <p class="small muted" style="margin:8px 0 0">✓ Pagado: carga el pago. ✏️ Editar: cambia el monto o la fecha. 🗑 Eliminar: lo saltea en este período o lo saca del plan. Todo se deshace con ↶.</p></div>
+      <p class="small muted" style="margin:8px 0 0"><span class="neg">Rojo</span>: lo que debés. <span class="alerta">Naranja</span>: vence en 3 días o menos. ✏️ cambia el monto (por ejemplo, el alquiler con el ajuste). 🗑 lo saca de este período. Todo se deshace con ↶.</p></div>
 
     <div class="card"><h2>📋 Plan de pagos del período<span class="sp"></span><button class="btn sm" data-nuevo-plan>+ Pago</button></h2>
-      ${planMes.length ? `<div class="list">${planMes.map(x => filaBtn(`data-edit="Vencimientos" data-id="${esc(x.v.id)}"`, esc(x.v.concepto), x.falta > 0 ? m(x.falta) : '<span class="pos">✓</span>', `Plan ${m(x.plan)} · pagado ${m(x.pagado)} · día ${fmtDM(x.fecha)}`)).join('')}</div>
+      ${planMes.length ? `<div class="list">${planMes.map(x => filaBtn(`data-edit="Vencimientos" data-id="${esc(x.v.id)}"`, esc(x.v.concepto), x.falta > 0 ? `<span class="neg">${m(x.falta)}</span>` : '<span class="pos">✓ pagado</span>', `Plan ${m(x.plan)} · <span class="pos">pagado ${m(x.pagado)}</span> · día ${fmtDM(x.fecha)} · tocá para cambiar el monto`)).join('')}</div>
         <div class="row2" style="margin-top:10px"><div class="stat"><div class="l">Plan del mes</div><div class="v num">${m(sum(planMes, x => x.plan))}</div></div><div class="stat"><div class="l">Falta pagar del plan</div><div class="v num">${m(sum(planMes, x => x.falta))}</div></div></div>
         <p class="small muted" style="margin:8px 0 0">Como las columnas "Pagar" y "Pendiente" de tu planilla. Lo pagado sale de los gastos del mes con el mismo nombre ("Comida" toma Supermercado). Tocá un pago para cambiar el monto.</p>`
         : '<p class="small muted" style="margin:0">Cargá tus pagos de todos los meses (alquiler, servicios, comida…) con "+ Pago". Mientras tanto se estiman con lo que pagaste el mes pasado.</p>'}</div>
@@ -2039,7 +2041,7 @@ const FORMS = {
     titulo: 'vencimiento',
     campos: [
       { n: 'concepto', l: 'Concepto', t: 'text', req: true, max: 80, ph: 'Ej.: Luz' },
-      { n: 'monto', l: 'Monto', t: 'money', req: true, min: 0, half: true },
+      { n: 'monto', l: 'Monto (cambialo cuando haya ajuste)', t: 'money', req: true, min: 0, half: true },
       { n: 'moneda', l: 'Moneda', t: 'select', o: opts({ ARS: 'Pesos', USD: 'Dólares' }), half: true },
       { n: 'fecha', l: 'Fecha de vencimiento', t: 'date', req: true, def: () => hoy() },
       { n: 'medio', l: 'Medio de pago', t: 'select', o: opts({ debito: 'Débito', efectivo: 'Efectivo', transferencia: 'Transferencia', visa: 'Visa', mastercard: 'Mastercard', otro: 'Otro' }), half: true },
@@ -2177,9 +2179,7 @@ document.addEventListener('click', e => {
     }
     const it = pendienteDelMes().items.find(x => x.k === ds.k); if (!it) return;
     if (tipo === 'plan') {
-      const id = it.k.slice(5);
-      if (confirm(`¿Saltear "${it.concepto}" solo en este período?\n\nAceptar = solo este período (vuelve el mes que viene).\nCancelar = otras opciones.`)) omitirEnPeriodo(it.k, it.concepto, it.ars);
-      else if (confirm(`¿Sacar "${it.concepto}" del plan de pagos para siempre?`)) { borrarFila('Vencimientos', id); toast('Sacado del plan. Podés deshacerlo con ↶.', 'ok', 3000); }
+      if (confirm(`¿Sacar "${it.concepto}" de este período? Vuelve el mes que viene.`)) omitirEnPeriodo(it.k, it.concepto, it.ars);
       return;
     }
     if (confirm(`¿Saltear "${it.concepto}" en este período?`)) omitirEnPeriodo(it.k, it.concepto, it.ars);
