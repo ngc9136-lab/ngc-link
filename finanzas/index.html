@@ -327,7 +327,7 @@ const LS = {
 /** Versión mínima del script de Google que necesita esta app (ver apps-script/Code.gs). */
 const VERSION_SCRIPT_MIN = 5;
 /** Versión visible de la app (se ve en Más). Cambiarla junto con VERSION en sw.js. */
-const APP_VERSION = '2026-10-06.1';
+const APP_VERSION = '2026-10-06.2';
 const HOJAS = ['Ingresos', 'Gastos', 'Cuotas', 'Inversiones', 'Vencimientos', 'Objetivos', 'Historial'];
 const NUMERICOS = ['monto', 'montoCuota', 'cuotasTotales', 'cantidad', 'precioCompra', 'tcCompra', 'meta', 'saldoInicial', 'patrimonioARS', 'patrimonioUSD', 'dolar'];
 const TARJETAS = ['visa', 'mastercard'];
@@ -1252,10 +1252,11 @@ function renderMes() {
   const keyV = v => (v.id ? `data-id="${esc(v.id)}"` : `data-ref="${esc(v.ref)}"`);
   const fila = (a, b, sub = '', extra = '') => `<div class="item"><div class="main"><div class="t" style="white-space:normal">${a}</div>${sub ? `<div class="s" style="white-space:normal">${sub}</div>` : ''}</div><div class="r"><div class="a num">${b}</div>${extra}</div></div>`;
   const filaBtn = (attrs, a, b, sub = '', extra = '') => `<div class="item"><button class="main" style="text-align:left" ${attrs}><div class="t" style="white-space:normal">${a}</div>${sub ? `<div class="s" style="white-space:normal">${sub}</div>` : ''}</button><div class="r"><div class="a num">${b}</div>${extra}</div></div>`;
+  const clavesPlan = planDePagos().map(x => x.k); // un gasto que cuenta como pago del plan también se puede deshacer
   // Pagos ya hechos este mes: vencimientos marcados y gastos fijos/tarjeta cargados (se pueden deshacer o editar)
   const pagosHechos = [
     ...pagadosVenc.map(v => ({ fecha: v.fecha, html: filaBtn(`data-venc-edit ${keyV(v)}`, esc(v.concepto), fmtMon(+v.monto, v.moneda), `${fmtDM(v.fecha)} · ${v.origen === 'ahorro' ? 'Separado' : 'Pagado'} · tocá para editar`, `<button class="btn sm" data-despagar ${keyV(v)}>↩ Deshacer</button>`) })),
-    ...S.data.Gastos.filter(g => g.ambito !== 'negocio' && enCiclo(g.fecha, c) && (g.fijo === 'si' || g.categoria === 'Tarjeta de crédito'))
+    ...S.data.Gastos.filter(g => g.ambito !== 'negocio' && enCiclo(g.fecha, c) && (g.fijo === 'si' || g.categoria === 'Tarjeta de crédito' || clavesPlan.some(k => coincidePlan(g, k))))
       .map(g => ({ fecha: g.fecha, html: filaBtn(`data-edit="Gastos" data-id="${esc(g.id)}"`, esc(g.descripcion), fmtMon(+g.monto, g.moneda), `${fmtDM(g.fecha)} · ${esc(g.categoria)} · tocá para editar`, `<button class="btn sm" data-deshacer-gasto="${esc(g.id)}">↩ Deshacer</button>`) })),
   ].sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
   const planMes = planDePagos();
