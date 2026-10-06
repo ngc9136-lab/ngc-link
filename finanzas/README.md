@@ -222,4 +222,4 @@ La URL del script, la clave y los ajustes se guardan **solo en el dispositivo** 
 ## Recibos de sueldo
 
 Al cargar un recibo, las **horas extras** se separan del sueldo como ingreso variable. Cuentan como horas extras los códigos 2536 (Hs. Complementarias 50%), 4280 (Hs. Complementarias al 50%), 809 y 810 (Ajuste por extensión de jornada). Los dos primeros llevan aportes; el 809 y el 810 son no remunerativos.
-
+- **🛒 Comida** (en Mi mes): presupuesto de comida del período (el pago "Comida" del plan), lo gastado, lo que queda y cuánto se puede gastar por día. Cada compra se carga con monto (y detalle opcional) y queda como gasto de Supermercado; se ven agrupadas por día y se pueden editar o borrar.
