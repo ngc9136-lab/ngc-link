@@ -345,7 +345,7 @@ const LS = {
 /** Versión mínima del script de Google que necesita esta app (ver apps-script/Code.gs). */
 const VERSION_SCRIPT_MIN = 5;
 /** Versión visible de la app (se ve en Más). Cambiarla junto con VERSION en sw.js. */
-const APP_VERSION = '2026-10-07.2';
+const APP_VERSION = '2026-10-07.3';
 const HOJAS = ['Ingresos', 'Gastos', 'Cuotas', 'Inversiones', 'Vencimientos', 'Objetivos', 'Historial'];
 const NUMERICOS = ['monto', 'montoCuota', 'cuotasTotales', 'cantidad', 'precioCompra', 'tcCompra', 'meta', 'saldoInicial', 'patrimonioARS', 'patrimonioUSD', 'dolar'];
 const TARJETAS = ['visa', 'mastercard'];
@@ -1279,9 +1279,7 @@ async function recibirArchivo(file) {
     formActual.extra.fijos = { ...(formActual.extra.fijos || {}), comprobante: comp };
     mostrarComprobanteEnForm(comp); toast('Comprobante adjuntado. Tocá Guardar.', 'ok', 2500); return;
   }
-  abrirForm('Gastos', null, { fijos: { comprobante: comp }, vals: esPdf ? { fecha: hoy(), categoria: 'Tarjeta de crédito', descripcion: 'Resumen de tarjeta', medio: 'debito' } : { fecha: hoy() }, titulo: esPdf ? 'gasto con resumen adjunto' : 'gasto con ticket' });
-  mostrarComprobanteEnForm(comp);
-  setTimeout(() => { const i = $('#f-monto'); if (i) i.focus(); }, 100);
+  analizarComprobante(blob, esPdf ? 'application/pdf' : (blob.type || 'image/jpeg'), comp);
 }
 async function urlComprobante(comp) {
   if (!comp) return null;
@@ -1314,6 +1312,241 @@ async function subirComprobante(gastoId) {
     if (j.url) { HIST.aplicando = true; try { guardarFila('Gastos', { ...S.data.Gastos.find(x => x.id === gastoId), comprobante: j.url }, { render: false }); } finally { HIST.aplicando = false; } }
   } catch (e) { /* queda guardado en el celular; se reintenta la próxima vez */ }
 }
+/* ---------- Lector de comprobantes: abre el archivo, lo analiza y propone qué registrar ----------
+ * Todo se procesa en el celular (no se manda a ningún servidor):
+ *  - PDF: se lee el texto con pdf.js (recibos de sueldo, resúmenes de tarjeta, facturas).
+ *  - Fotos: se reconoce el texto con Tesseract (OCR en español). La primera vez baja ~15 MB y tarda un poco.
+ * Siempre se muestra una revisión antes de guardar: nada se registra sin confirmar. */
+const LIBS = {
+  pdf: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
+  pdfWorker: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js',
+  ocr: 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js',
+  ocrWorker: 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/worker.min.js',
+  ocrCore: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@5.1.1',
+  ocrLang: 'https://cdn.jsdelivr.net/npm/@tesseract.js-data/spa@1.0.0/4.0.0_best_int',
+};
+/** Códigos del recibo de sueldo que cuentan como horas extras (ver CLAUDE.md) y aportes personales. */
+const RECIBO = { hxRem: ['2536', '4280'], hxNoRem: ['809', '810'], aportes: ['6000', '6010', '6030', '6203'] };
+const _scripts = {};
+function cargarScript(src) {
+  return _scripts[src] || (_scripts[src] = new Promise((ok, mal) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => { delete _scripts[src]; mal(new Error('No se pudo descargar el lector (¿sin conexión?).')); }; document.head.appendChild(s); }));
+}
+/** Importe en formato argentino o con punto decimal: "12.345,67", "12345.67", "$ 1.234". */
+function parseImporte(t) {
+  let s = String(t || '').replace(/[^\d.,-]/g, '');
+  if (!s) return NaN;
+  const uc = s.lastIndexOf(','), up = s.lastIndexOf('.');
+  if (uc > -1 && up > -1) s = uc > up ? s.replace(/\./g, '').replace(',', '.') : s.replace(/,/g, '');
+  else if (uc > -1) s = /,\d{1,2}$/.test(s) ? s.replace(',', '.') : s.replace(/,/g, '');
+  else if ((s.match(/\./g) || []).length > 1 || /\.\d{3}$/.test(s)) s = s.replace(/\./g, '');
+  const n = Number(s); return isFinite(n) ? n : NaN;
+}
+const MESES_ES = { ene: 1, feb: 2, mar: 3, abr: 4, may: 5, jun: 6, jul: 7, ago: 8, sep: 9, set: 9, oct: 10, nov: 11, dic: 12 };
+/** Busca la primera fecha del texto (dd/mm/aaaa, dd/mm/aa, dd-mmm-aa) y la devuelve como aaaa-mm-dd. */
+function buscarFecha(t) {
+  const m = String(t).match(/(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})/);
+  if (m) { const y = m[3].length === 2 ? 2000 + +m[3] : +m[3]; if (+m[2] >= 1 && +m[2] <= 12 && +m[1] >= 1 && +m[1] <= 31) return `${y}-${pad(+m[2])}-${pad(+m[1])}`; }
+  const m2 = normTexto(t).match(/(\d{1,2})[\s\/.-]*(ene|feb|mar|abr|may|jun|jul|ago|sep|set|oct|nov|dic)[a-z]*[\s\/.-]*(\d{2,4})/);
+  if (m2) { const y = m2[3].length === 2 ? 2000 + +m2[3] : +m2[3]; return `${y}-${pad(MESES_ES[m2[2]])}-${pad(+m2[1])}`; }
+  return '';
+}
+const IMPORTE_RE = /\$?\s*-?\d{1,3}(?:[.\s]\d{3})*(?:,\d{2})|\$?\s*-?\d+(?:[.,]\d{2})/g;
+const importesDe = t => (String(t).match(IMPORTE_RE) || []).map(parseImporte).filter(n => isFinite(n));
+
+/** Texto del PDF agrupado en renglones (con la posición x de cada pedazo, para separar columnas). */
+async function leerPDF(blob) {
+  await cargarScript(LIBS.pdf);
+  const pdfjs = window.pdfjsLib; pdfjs.GlobalWorkerOptions.workerSrc = LIBS.pdfWorker;
+  const doc = await pdfjs.getDocument({ data: new Uint8Array(await blob.arrayBuffer()) }).promise;
+  const lineas = [];
+  for (let n = 1; n <= Math.min(doc.numPages, 8); n++) {
+    const pag = await doc.getPage(n), tc = await pag.getTextContent();
+    const items = tc.items.filter(i => i.str && i.str.trim()).map(i => ({ s: i.str, x: i.transform[4], y: Math.round(i.transform[5] * 2) / 2, p: n }));
+    items.sort((a, b) => b.y - a.y || a.x - b.x);
+    for (const it of items) {
+      const l = lineas.find(l => l.p === n && Math.abs(l.y - it.y) <= 2);
+      if (l) l.items.push(it); else lineas.push({ p: n, y: it.y, items: [it] });
+    }
+  }
+  for (const l of lineas) {
+    l.items.sort((a, b) => a.x - b.x);
+    // une "615.623" + ",07" en un solo número
+    const t = []; for (const it of l.items) { const prev = t[t.length - 1]; if (prev && /^,\d{1,2}$/.test(it.s.trim()) && /\d$/.test(prev.s)) prev.s += it.s.trim(); else t.push({ ...it, s: it.s.trim() }); }
+    l.items = t; l.texto = t.map(i => i.s).join(' ');
+  }
+  return lineas;
+}
+async function leerFoto(blob, aviso) {
+  await cargarScript(LIBS.ocr);
+  aviso('Leyendo la foto… la primera vez tarda (descarga el lector).');
+  const w = await window.Tesseract.createWorker('spa', 1, { workerPath: LIBS.ocrWorker, corePath: LIBS.ocrCore, langPath: LIBS.ocrLang });
+  try { const r = await w.recognize(blob); return r.data.text || ''; } finally { w.terminate(); }
+}
+
+/* ----- Recibo de sueldo ----- */
+function analizarRecibo(lineas) {
+  const txt = lineas.map(l => l.texto).join('\n');
+  if (!/RECIBO DE REMUNERACIONES/i.test(txt)) return null;
+  const nro = (txt.match(/REMUNERACIONES\s*N[°º]?:?\s*(\d+)/i) || [])[1] || (lineas.find(l => /^\d{5,7}$/.test(l.texto.trim())) || {}).texto || uid();
+  const neto = parseImporte((txt.match(/\*+\s*([\d.]+,\d{2})/) || [])[1]);
+  const iPago = lineas.findIndex(l => /F\.?\s*PAGO/i.test(l.texto));
+  const lPago = iPago >= 0 ? lineas.slice(iPago + 1, iPago + 3).find(l => buscarFecha(l.texto)) : null;
+  const fecha = lPago ? buscarFecha(lPago.texto) : buscarFecha(txt) || hoy();
+  const periodo = lPago ? lPago.texto.replace(/\d{1,2}\/\d{1,2}\/\d{2,4}.*$/, '').trim() : '';
+  // Conceptos: código al principio del renglón; importe en la columna de haberes (x < 300) o descuentos (x ≥ 300)
+  const conceptos = [];
+  for (const l of lineas) {
+    const f0 = l.items[0]; if (!f0) continue;
+    let cod, nombre; const m = f0.s.match(/^(\d{2,4})\s+(.+)$/);
+    if (m) { cod = m[1]; nombre = m[2]; }
+    else if (/^\d{2,4}$/.test(f0.s) && f0.x < 40) { cod = f0.s; nombre = l.items.slice(1).filter(i => i.x < 150 && !/^[\d.,]+$/.test(i.s)).map(i => i.s).join(' '); }
+    else continue;
+    const imps = l.items.filter(i => i.x > 200 && /^\d{1,3}(\.\d{3})*,\d{2}$/.test(i.s));
+    if (!imps.length) continue;
+    const imp = imps[imps.length - 1];
+    conceptos.push({ cod, nombre: nombre.trim(), monto: parseImporte(imp.s), col: imp.x < 300 ? 'haber' : 'desc' });
+  }
+  const iRem = lineas.findIndex(l => /TOTAL HABERES C\/APORTE/i.test(l.texto));
+  let totalRem = NaN;
+  if (iRem >= 0) for (const l of lineas.slice(iRem + 1, iRem + 3)) { const v = importesDe(l.texto); if (v.length) { totalRem = v[0]; break; } }
+  if (!isFinite(totalRem)) totalRem = sum(conceptos.filter(c => c.col === 'haber' && !/no\s*rem|extraor/i.test(c.nombre)), c => c.monto);
+  const aportes = sum(conceptos.filter(c => c.col === 'desc' && RECIBO.aportes.includes(c.cod)), c => c.monto);
+  const pctAportes = totalRem > 0 ? aportes / totalRem : 0.17;
+  const hxRem = conceptos.filter(c => c.col === 'haber' && RECIBO.hxRem.includes(c.cod));
+  const hxNoRem = conceptos.filter(c => c.col === 'haber' && RECIBO.hxNoRem.includes(c.cod));
+  const hxBruto = sum([...hxRem, ...hxNoRem], c => c.monto);
+  const hxNeto = Math.round((sum(hxNoRem, c => c.monto) + sum(hxRem, c => c.monto) * (1 - pctAportes)) * 100) / 100;
+  const esAnticipo = /anticipo/i.test(periodo) || (conceptos.length === 1 && /anticipo/i.test(conceptos[0].nombre));
+  const nombrePer = periodo || fmtMesCorto(fecha.slice(0, 7));
+  const props = [];
+  if (!(neto > 0)) return { tipo: 'recibo', titulo: 'Recibo de sueldo', detalle: ['No encontré el "Neto a cobrar".'], props };
+  if (esAnticipo || !(hxNeto > 0)) {
+    props.push({ hoja: 'Ingresos', row: { id: `rec-${nro}`, fecha, concepto: esAnticipo ? `Anticipo de sueldo ${nombrePer.replace(/anticipo/i, '').trim()}` : `Sueldo ${nombrePer}`, categoria: 'Sueldo', monto: neto, moneda: 'ARS', tipo: 'fijo', nota: `Recibo N° ${nro}` } });
+  } else {
+    props.push({ hoja: 'Ingresos', row: { id: `rec-${nro}-sueldo`, fecha, concepto: `Sueldo ${nombrePer}`, categoria: 'Sueldo', monto: Math.round((neto - hxNeto) * 100) / 100, moneda: 'ARS', tipo: 'fijo', nota: `Recibo N° ${nro} · neto ${fmtMon(neto, 'ARS')} menos horas extras` } });
+    props.push({ hoja: 'Ingresos', row: { id: `rec-${nro}-hsextras`, fecha, concepto: `Horas extras ${nombrePer}`, categoria: 'Horas extras', monto: hxNeto, moneda: 'ARS', tipo: 'variable', nota: `Códigos ${[...hxRem, ...hxNoRem].map(c => c.cod).join(', ')} · bruto ${fmtMon(hxBruto, 'ARS')} · neto estimado (sin separar Ganancias)` } });
+  }
+  // Si este recibo ya estaba cargado (por número o por concepto y fecha), se actualiza en vez de duplicarse
+  for (const pr of props) {
+    const ya = S.data.Ingresos.find(i => (String(i.nota || '').includes(`N° ${nro}`) && i.categoria === pr.row.categoria) || (i.fecha === pr.row.fecha && normTexto(i.concepto) === normTexto(pr.row.concepto)));
+    if (ya) { pr.row.id = ya.id; pr.etiqueta = 'Actualizar ingreso ya cargado'; }
+  }
+  const detalle = [`Recibo N° ${nro} · ${nombrePer} · pagado el ${fmtFecha(fecha)}`, `Neto a cobrar: <b>${fmtMon(neto, 'ARS')}</b>`];
+  if (hxBruto > 0) detalle.push(`Horas extras: ${[...hxRem, ...hxNoRem].map(c => `${c.cod} ${esc(c.nombre)} ${fmtMon(c.monto, 'ARS')}`).join(' · ')} → bruto ${fmtMon(hxBruto, 'ARS')}, neto estimado <b>${fmtMon(hxNeto, 'ARS')}</b> (aportes ${fmtPct(pctAportes * 100, 1)}; Ganancias no se puede separar)`);
+  return { tipo: 'recibo', titulo: 'Recibo de sueldo', detalle, props };
+}
+
+/* ----- Resumen de tarjeta ----- */
+function analizarResumen(lineas) {
+  const txt = lineas.map(l => l.texto).join('\n'), n = normTexto(txt);
+  if (!/(resumen|estado de cuenta|liquidacion)/.test(n) || !/(vencimiento|vto)/.test(n) || !/(visa|master|american express|amex|cabal|naranja)/.test(n)) return null;
+  const medio = /master/.test(n) ? 'mastercard' : /visa/.test(n) ? 'visa' : 'otro';
+  const marca = medio === 'mastercard' ? 'Mastercard' : medio === 'visa' ? 'Visa' : 'tarjeta';
+  const buscar = (re, cuantos = 2) => {
+    for (let i = 0; i < lineas.length; i++) {
+      if (!re.test(normTexto(lineas[i].texto))) continue;
+      for (let j = i; j <= Math.min(i + cuantos, lineas.length - 1); j++) {
+        let t = lineas[j].texto;
+        if (j === i) { const m = normTexto(t).match(re); t = m ? t.slice(m.index + m[0].length) : t; } // en el renglón del título, solo lo que sigue
+        t = t.replace(/u\$?s[sd]?\s*[\d.,]+.*$/i, ''); // saca los importes en dólares
+        const v = importesDe(t); if (v.length) return v[0];
+      }
+    }
+    return NaN;
+  };
+  const buscarF = re => {
+    for (let i = 0; i < lineas.length; i++) {
+      const nt = normTexto(lineas[i].texto), m = nt.match(re); if (!m) continue;
+      const f0 = buscarFecha(nt.slice(m.index + m[0].length)); if (f0) return f0; // la fecha que sigue al título, en el mismo renglón
+      for (const l of lineas.slice(i + 1, i + 3)) { const f = buscarFecha(l.texto); if (f) return f; }
+    }
+    return '';
+  };
+  const total = buscar(/(saldo actual|total a pagar|saldo a pagar|saldo total|importe a pagar)/);
+  const minimo = buscar(/pago minimo/);
+  const vence = buscarF(/(vencimiento actual|vto\.? actual)/) || buscarF(/(fecha de vencimiento|vencimiento|vto)/);
+  const cierre = buscarF(/(cierre actual)/) || buscarF(/(fecha de cierre|cierre)/);
+  if (!(total > 0)) return { tipo: 'resumen', titulo: `Resumen ${marca}`, detalle: ['No encontré el total a pagar. Cargalo a mano.'], props: [] };
+  const concepto = `Resumen ${marca}`;
+  const props = [];
+  const tpl = S.data.Vencimientos.find(v => v.origen === 'plantilla' && normTexto(v.concepto).includes(normTexto(concepto)));
+  if (tpl) props.push({ hoja: 'Vencimientos', row: { ...tpl, monto: total, moneda: 'ARS', fecha: vence || tpl.fecha }, etiqueta: `Actualizar "${tpl.concepto}" del plan a` });
+  else props.push({ hoja: 'Vencimientos', row: { concepto, monto: total, moneda: 'ARS', fecha: vence || hoy(), medio, estado: 'pendiente', origen: 'manual' }, etiqueta: 'Nuevo pago pendiente' });
+  return { tipo: 'resumen', titulo: concepto, detalle: [`Total a pagar: <b>${fmtMon(total, 'ARS')}</b>`, vence ? `Vence: <b>${fmtFecha(vence)}</b>` : 'No encontré el vencimiento', isFinite(minimo) ? `Pago mínimo: ${fmtMon(minimo, 'ARS')}` : '', cierre ? `Cierre: ${fmtFecha(cierre)}` : ''].filter(Boolean), props };
+}
+
+/* ----- Ticket o factura de compra ----- */
+const CAT_TICKET = [[/(super|coto|carrefour|\bdia\b|jumbo|disco|chango|vea|verduler|carnic|almacen|autoserv|mayorist|vital|makro|maxiconsumo|panaderia|fiambre)/, 'Supermercado'], [/(farmacia|farmacity|medic)/, 'Salud'], [/(ypf|shell|axion|puma|combust|nafta)/, 'Transporte'], [/(restaurant|resto|bar\b|cafe|parrilla|pizzeria|mcdonald|burger)/, 'Comidas afuera'], [/(edesur|edenor|aysa|metrogas|naturgy|claro|personal|movistar|telecentro|fibertel)/, 'Servicios']];
+function analizarTicket(texto) {
+  const lineas = String(texto).split(/\n+/).map(s => s.trim()).filter(Boolean);
+  let total = NaN;
+  for (const l of lineas) if (/total/i.test(l) && !/sub\s*-?\s*total/i.test(l)) { const v = importesDe(l); if (v.length) total = Math.max(isFinite(total) ? total : 0, ...v); }
+  if (!(total > 0)) { const v = importesDe(texto).filter(x => x < 1e8); if (v.length) total = Math.max(...v); }
+  const fecha = buscarFecha(texto) || hoy();
+  const comercio = (lineas.find(l => /[a-záéíóúñ]{3,}/i.test(l) && !/(factura|ticket|cuit|iva|fecha|hora|caja|cajero|original|tique)/i.test(l)) || 'Compra').replace(/[^\wáéíóúñÁÉÍÓÚÑ .&-]/g, '').trim().slice(0, 40) || 'Compra';
+  const n = normTexto(texto);
+  const cat = (CAT_TICKET.find(([re]) => re.test(n)) || [null, 'Otros'])[1];
+  return { tipo: 'ticket', total, fecha: fecha > hoy() ? hoy() : fecha, comercio, categoria: cat };
+}
+
+/** Punto de entrada: analiza el comprobante recién guardado y muestra qué propone registrar. */
+async function analizarComprobante(blob, tipo, comp) {
+  const aviso = msg => toast(msg, 'info', 4000);
+  try {
+    if (tipo === 'application/pdf') {
+      aviso('Leyendo el PDF…');
+      const lineas = await leerPDF(blob);
+      const r = analizarRecibo(lineas) || analizarResumen(lineas);
+      if (r) return mostrarRevision(r, comp);
+      const t = analizarTicket(lineas.map(l => l.texto).join('\n'));
+      return abrirGastoDeTicket(t, comp, 'PDF');
+    }
+    const texto = await leerFoto(blob, aviso);
+    const lineasFoto = texto.split(/\n+/).map(s => ({ texto: s, items: s.split(/\s+/).map(x => ({ s: x, x: 0 })) }));
+    const r = /RECIBO DE REMUNERACIONES/i.test(texto) ? null : analizarResumen(lineasFoto);
+    if (r && r.props.length) return mostrarRevision(r, comp);
+    return abrirGastoDeTicket(analizarTicket(texto), comp, 'foto');
+  } catch (e) {
+    toast('No pude leer el archivo automáticamente: ' + e.message + '. Completá los datos a mano.', 'warn', 6000);
+    const esPdf = tipo === 'application/pdf';
+    abrirForm('Gastos', null, { fijos: { comprobante: comp }, vals: esPdf ? { fecha: hoy(), categoria: 'Tarjeta de crédito', descripcion: 'Resumen de tarjeta', medio: 'debito' } : { fecha: hoy() }, titulo: esPdf ? 'gasto con resumen adjunto' : 'gasto con comprobante' });
+    mostrarComprobanteEnForm(comp);
+  }
+}
+function abrirGastoDeTicket(t, comp, origen) {
+  abrirForm('Gastos', null, { fijos: { comprobante: comp }, vals: { fecha: t.fecha, categoria: t.categoria, descripcion: t.comercio, monto: t.total > 0 ? t.total : '', medio: 'debito' }, titulo: 'gasto (revisá lo leído)' });
+  mostrarComprobanteEnForm(comp);
+  const body = $('#sheet-body');
+  const info = document.createElement('div'); info.className = 'banner ' + (t.total > 0 ? 'info' : 'warn');
+  info.innerHTML = `<span class="bi">🔎</span><div>${t.total > 0 ? `Leí la ${origen}: <b>${esc(t.comercio)}</b>, total <b>${fmtMon(t.total, 'ARS')}</b>, ${fmtFecha(t.fecha)}. Revisá y tocá Guardar.` : 'No encontré el total. Escribí el monto y tocá Guardar.'}${t.categoria === 'Supermercado' ? ' Se descuenta del presupuesto de comida.' : ''}</div>`;
+  body.prepend(info);
+}
+let revisionActual = null;
+function mostrarRevision(r, comp) {
+  revisionActual = { r, comp };
+  formActual = null;
+  $('#sheet-title').textContent = `🔎 ${r.titulo}`;
+  $('#sheet-body').innerHTML = `<div class="list" style="margin-bottom:12px">${r.detalle.map(d => `<div class="item"><div class="main"><div class="s" style="white-space:normal">${d}</div></div></div>`).join('')}</div>
+    ${r.props.length ? `<p class="small" style="margin:0 0 8px"><b>Para registrar</b> (podés cambiar los montos o destildar):</p>
+    <form id="form-revision" novalidate>${r.props.map((p, i) => `<label class="item" style="gap:10px"><input type="checkbox" name="ok${i}" checked style="width:22px;height:22px">
+      <div class="main"><div class="t" style="white-space:normal">${esc(p.etiqueta || (p.hoja === 'Ingresos' ? 'Ingreso' : 'Pago'))}: ${esc(p.row.concepto || '')}</div><div class="s">${p.row.fecha ? fmtFecha(p.row.fecha) : ''}${p.row.tipo ? ' · ' + (p.row.tipo === 'fijo' ? 'fijo' : 'variable') : ''}</div></div>
+      <input type="text" inputmode="decimal" name="m${i}" value="${esc(fmtInput(p.row.monto))}" style="width:130px;height:44px;border-radius:10px;background:var(--card2);border:1px solid var(--line);color:var(--txt);padding:0 10px;text-align:right"></label>`).join('')}
+      <div class="btns" style="margin-top:12px"><button type="submit" class="btn pri">✓ Registrar</button><button type="button" class="btn" data-action="cerrar-sheet">Cancelar</button></div></form>` : '<p class="small muted">No hay nada para registrar automáticamente.</p>'}`;
+  $('#sheet').hidden = false; document.body.style.overflow = 'hidden';
+}
+function confirmarRevision(f) {
+  if (!revisionActual) return;
+  const { r, comp } = revisionActual; let n = 0;
+  r.props.forEach((p, i) => {
+    if (!f.elements['ok' + i].checked) return;
+    const monto = parseImporte(f.elements['m' + i].value);
+    if (!(monto >= 0)) return;
+    guardarFila(p.hoja, { ...p.row, monto, comprobante: comp }, { render: false }); n++;
+  });
+  revisionActual = null; cerrarForm(); renderTodo();
+  toast(n ? `Registrado ✓ (${n} ${n === 1 ? 'dato' : 'datos'}). Podés deshacerlo con ↶.` : 'No se registró nada.', n ? 'ok' : 'info', 3500);
+}
+
 function botonesComprobante() {
   return `<div class="comp-bar"><button class="btn" data-foto>📷 Foto de ticket</button><button class="btn" data-adjuntar>📎 Resumen o archivo</button></div>`;
 }
@@ -2228,7 +2461,7 @@ function abrirForm(hoja, row = null, extra = {}) {
   document.body.style.overflow = 'hidden';
   setTimeout(() => { const f = $('#form-fila input:not([type=date]), #form-fila select'); if (f && !row) f.focus({ preventScroll: true }); }, 50);
 }
-function cerrarForm() { $('#sheet').hidden = true; document.body.style.overflow = ''; formActual = null; }
+function cerrarForm() { $('#sheet').hidden = true; document.body.style.overflow = ''; formActual = null; revisionActual = null; }
 function campoHTML(c, v) {
   const id = 'f-' + c.n; let input;
   const st = c.half ? '' : 'style="grid-column:1/-1"';
@@ -2395,6 +2628,7 @@ document.addEventListener('submit', e => {
   e.preventDefault();
   if (e.target.id === 'form-fila') enviarForm();
   if (e.target.id === 'form-comida') cargarComida(e.target);
+  if (e.target.id === 'form-revision') confirmarRevision(e.target);
   if (e.target.id === 'form-ajustes') guardarAjustes(e.target);
 });
 document.addEventListener('change', e => {
