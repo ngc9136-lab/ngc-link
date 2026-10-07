@@ -18,5 +18,6 @@ Cuando lleguen recibos de sueldo, sumar como "Horas extras" solo estos códigos 
 - El código 2626 (Aj. Hs. Ext. 100%) **no** está en la lista del usuario: va con el sueldo.
 - El recibo no trae el neto por concepto. Neto estimado de las horas extras = no remunerativos completos + remunerativos × (1 − % de aportes del recibo: jubilación, Ley 19032, obra social y cuota sindical). Ganancias no se puede separar; aclararlo.
 - En la app, el recibo se carga como dos ingresos: "Sueldo <mes>" (fijo) y "Horas extras <mes>" (variable), con el neto estimado de las horas extras.
+- La app lee los recibos en PDF sola (`analizarRecibo` en `finanzas/index.html`); los códigos están en la constante `RECIBO`. Si el usuario cambia la lista de códigos, actualizar ahí y en esta tabla.
 - El cobro es el 4.° día hábil del mes (`diaCobro: 4`, `cobroHabil: 1`).
 - No guardar en el repositorio datos personales (nombre, CUIL, cuenta, montos): solo códigos y reglas.
