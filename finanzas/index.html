@@ -345,7 +345,7 @@ const LS = {
 /** Versión mínima del script de Google que necesita esta app (ver apps-script/Code.gs). */
 const VERSION_SCRIPT_MIN = 5;
 /** Versión visible de la app (se ve en Más). Cambiarla junto con VERSION en sw.js. */
-const APP_VERSION = '2026-10-07.5';
+const APP_VERSION = '2026-10-07.6';
 const HOJAS = ['Ingresos', 'Gastos', 'Cuotas', 'Inversiones', 'Vencimientos', 'Objetivos', 'Historial'];
 const NUMERICOS = ['monto', 'montoCuota', 'cuotasTotales', 'cantidad', 'precioCompra', 'tcCompra', 'meta', 'saldoInicial', 'patrimonioARS', 'patrimonioUSD', 'dolar'];
 const TARJETAS = ['visa', 'mastercard'];
@@ -364,7 +364,7 @@ const CRIPTO_EXTRA = { XRP: 'ripple', NEXO: 'nexo', XLM: 'stellar', SOL: 'solana
 const ESTABLES_USD = ['USDX'];
 
 const DEFAULT_CFG = {
-  scriptUrl: '', token: '', dolarTipo: 'mep', vista: 'ARS', presupuesto: 0, disponibleTarjetas: 0, mesesObjetivo: 12, topeTarjetas: 0, diaAhorro: 5, diaCobro: 1, cobroHabil: 0,
+  scriptUrl: '', token: '', dolarTipo: 'mep', vista: 'ARS', presupuesto: 0, disponibleTarjetas: 0, mesesObjetivo: 12, topeTarjetas: 0, diaAhorro: 5, diaCobro: 1, cobroHabil: 0, comerciosNegocio: [],
   tarjetas: { visa: { cierre: 25, venc: 5 }, mastercard: { cierre: 25, venc: 5 } },
   umbrales: {
     ahorroOk: 20, ahorroAt: 10, gastoOk: 80, gastoAt: 100, cobOk: 110, cobAt: 100, invAt: 5,
@@ -488,6 +488,8 @@ function vencimientosTodos() {
     else autos.push({ ...base, id: null, ref, estado: 'pendiente', auto: true });
   };
   for (const medio of TARJETAS) {
+    // Si el resumen de esta tarjeta está en el plan de pagos, el plan manda (no se arma otro automático)
+    if (S.data.Vencimientos.some(v => v.origen === 'plantilla' && normTexto(v.concepto).includes(normTexto('resumen ' + MEDIOS[medio])))) continue;
     for (const off of [-1, 0, 1]) {
       const ym = addMonths(cur, off);
       const r = resumenTarjeta(medio, ym);
@@ -1486,6 +1488,20 @@ function analizarResumen(lineas) {
   if (tpl) props.push({ hoja: 'Vencimientos', row: { ...tpl, monto: total, moneda: 'ARS', fecha: vence || tpl.fecha }, etiqueta: `Actualizar "${tpl.concepto}" del plan a` });
   else props.push({ hoja: 'Vencimientos', row: { id: `res-${medio}-${(vence || hoy()).slice(0, 7)}`, concepto, monto: total, moneda: 'ARS', fecha: vence || hoy(), medio, estado: 'pendiente', origen: 'manual' }, etiqueta: 'Nuevo pago pendiente' });
   if (totalUSD > 0) props.push({ hoja: 'Vencimientos', row: { id: `res-usd-${medio}-${(vence || hoy()).slice(0, 7)}`, concepto: `${concepto} (dólares)`, monto: totalUSD, moneda: 'USD', fecha: vence || hoy(), medio, estado: 'pendiente', origen: 'manual' }, etiqueta: 'Parte en dólares' });
+  // Comercios del negocio (Ajustes → comerciosNegocio): sus consumos se cargan como "El negocio me debe"
+  for (const kw of (S.cfg.comerciosNegocio || []).map(normTexto).filter(Boolean)) {
+    const ls = lineas.filter(l => normTexto(l.texto).includes(kw) && /^\d{1,2}[-\/]/.test(l.texto.trim()));
+    const movs = ls.map(l => {
+      const imps = l.items.filter(i => (i.x || 0) < 520 && /^-?\d{1,3}(\.\d{3})*,\d{2}$/.test(i.s));
+      const cuota = (l.items.find(i => /^\d{2}\/\d{2}$/.test(i.s)) || {}).s || '';
+      const desc = l.items.filter(i => !/^[\d.,\/-]+$/.test(i.s)).map(i => i.s).join(' ').replace(/^[*K]\s*/, '').replace(/MERPAGO\*/i, '').trim();
+      return { monto: imps.length ? parseImporte(imps[imps.length - 1].s) : NaN, cuota, desc, fecha: buscarFecha(l.texto) };
+    }).filter(m => isFinite(m.monto));
+    const neto = sum(movs, m => m.monto);
+    if (!(neto > 0)) continue; // cobrado y devuelto en el mismo resumen: no debe nada
+    const m0 = movs.find(m => m.monto > 0);
+    props.push({ hoja: 'Gastos', etiqueta: 'El negocio te debe', row: { id: `neg-${kw.replace(/\W+/g, '')}-${(m0.cuota || '').replace('/', 'de')}-${(cierre || hoy()).slice(0, 7)}`, fecha: cierre || hoy(), categoria: 'Negocio', descripcion: `${m0.desc}${m0.cuota ? ` (cuota ${m0.cuota})` : ''}`, monto: neto, moneda: 'ARS', medio, ambito: 'negocio', fijo: 'no', devuelto: 'no' } });
+  }
   const debito = /debitaremos/.test(n);
   return { tipo: 'resumen', titulo: concepto, props, detalle: [
     `Total a pagar: <b>${fmtMon(total, 'ARS')}</b>${totalUSD > 0 ? ` + <b>${fmtMon(totalUSD, 'USD')}</b>` : ''}`,
@@ -1565,7 +1581,7 @@ function registrarAuto(r, comp) {
   $('#sheet-title').textContent = `✅ ${r.titulo}: registrado`;
   $('#sheet-body').innerHTML = `<div class="list">${r.detalle.map(d => `<div class="item"><div class="main"><div class="s" style="white-space:normal">${d}</div></div></div>`).join('')}</div>
     <p class="small" style="margin:12px 0 6px"><b>Lo que cargué:</b></p>
-    <div class="list">${hechos.map(h => `<div class="item"><button class="main" style="text-align:left" data-edit="${h.p.hoja}" data-id="${esc(h.row.id)}"><div class="t" style="white-space:normal">${esc(h.row.concepto || h.row.descripcion)}</div><div class="s">${AREA[h.p.hoja]} · ${fmtFecha(h.row.fecha)}${h.p.etiqueta && /Actualizar/.test(h.p.etiqueta) ? ' · actualizado' : ''} · tocá para editar</div></button><div class="r"><div class="a num ${h.p.hoja === 'Ingresos' ? 'pos' : 'neg'}">${fmtMon(+h.row.monto, h.row.moneda)}</div></div></div>`).join('')}</div>
+    <div class="list">${hechos.map(h => `<div class="item"><button class="main" style="text-align:left" data-edit="${h.p.hoja}" data-id="${esc(h.row.id)}"><div class="t" style="white-space:normal">${esc(h.row.concepto || h.row.descripcion)}</div><div class="s">${h.row.ambito === 'negocio' ? '🏢 El negocio te debe' : AREA[h.p.hoja]} · ${fmtFecha(h.row.fecha)}${h.p.etiqueta && /Actualizar/.test(h.p.etiqueta) ? ' · actualizado' : ''} · tocá para editar</div></button><div class="r"><div class="a num ${h.p.hoja === 'Ingresos' ? 'pos' : 'neg'}">${fmtMon(+h.row.monto, h.row.moneda)}</div></div></div>`).join('')}</div>
     <div class="btns" style="margin-top:12px"><button type="button" class="btn pri" data-action="cerrar-sheet">Listo</button><button type="button" class="btn" data-deshacer-auto>↶ Deshacer todo</button></div>`;
   $('#sheet').hidden = false; document.body.style.overflow = 'hidden';
 }
@@ -2761,8 +2777,9 @@ async function importarDesdeEnlace() {
     // Ajustes que puede traer el enlace (solo estos campos)
     const cfgOk = ['presupuesto', 'topeTarjetas', 'mesesObjetivo', 'diaCobro', 'cobroHabil'];
     const cfgNuevo = datos.cfg && typeof datos.cfg === 'object' ? Object.fromEntries(Object.entries(datos.cfg).filter(([k, v]) => cfgOk.includes(k) && isFinite(+v) && +v >= 0).map(([k, v]) => [k, +v])) : {};
+    if (datos.cfg && Array.isArray(datos.cfg.comerciosNegocio)) cfgNuevo.comerciosNegocio = [...new Set([...(S.cfg.comerciosNegocio || []), ...datos.cfg.comerciosNegocio.map(x => String(x).slice(0, 40)).filter(Boolean)])];
     if (!hojas.length && !Object.keys(cfgNuevo).length && !aBorrar.length) throw new Error('El enlace no tiene datos para importar.');
-    const resumen = [...hojas.map(h => `${datos[h].rows.length} ${h.toLowerCase()}`), ...(Object.keys(cfgNuevo).length ? ['tus topes de gasto'] : []), ...(aBorrar.length ? [`se borran: ${aBorrar.map(([, , r]) => `"${r.concepto || r.descripcion || r.activo}"`).join(', ')}`] : [])].join(' y ');
+    const resumen = [...hojas.map(h => `${datos[h].rows.length} ${h.toLowerCase()}`), ...(Object.keys(cfgNuevo).length ? ['tus ajustes'] : []), ...(aBorrar.length ? [`se borran: ${aBorrar.map(([, , r]) => `"${r.concepto || r.descripcion || r.activo}"`).join(', ')}`] : [])].join(' y ');
     if (!confirm(`Se van a cargar ${resumen}. Si ya estaban cargados, se actualizan sin duplicarse. ¿Continuar?`)) return;
     const ahora = new Date().toISOString();
     for (const h of hojas) {
