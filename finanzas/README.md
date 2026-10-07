@@ -236,3 +236,4 @@ Al cargar un recibo, las **horas extras** se separan del sueldo como ingreso var
 - **Gastos → 💳 Resumen Visa / Mastercard**: total a pagar (rojo si falta pagar, verde si ya está pagado), vencimiento, mínimo y cada grupo con su detalle. Los comercios del negocio se marcan con 🏢.
 - **Cuotas → 📅 Cuotas mes a mes**: los próximos 12 meses con columnas Visa, Master, Otras (las de la hoja Cuotas) y Total. Tocá un mes para ver qué cuota se paga y cuáles terminan. Se calcula con el último resumen de cada tarjeta (cuota n/N → los meses siguientes hasta N).
 - Los resúmenes ya cargados antes se vuelven a leer solos al abrir Gastos o Cuotas. Un enlace `#importar=` también puede traer `resumenes`.
+- **Mi mes → Falta pagar**: cada resumen aparece en una sola línea con el total en pesos = saldo en pesos + saldo en dólares × dólar **oficial** (venta). Al tocar ✓ Pagado se propone ese total; la parte en dólares deja de figurar como pendiente.
