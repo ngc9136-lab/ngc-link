@@ -345,7 +345,7 @@ const LS = {
 /** Versión mínima del script de Google que necesita esta app (ver apps-script/Code.gs). */
 const VERSION_SCRIPT_MIN = 5;
 /** Versión visible de la app (se ve en Más). Cambiarla junto con VERSION en sw.js. */
-const APP_VERSION = '2026-10-07.4';
+const APP_VERSION = '2026-10-07.5';
 const HOJAS = ['Ingresos', 'Gastos', 'Cuotas', 'Inversiones', 'Vencimientos', 'Objetivos', 'Historial'];
 const NUMERICOS = ['monto', 'montoCuota', 'cuotasTotales', 'cantidad', 'precioCompra', 'tcCompra', 'meta', 'saldoInicial', 'patrimonioARS', 'patrimonioUSD', 'dolar'];
 const TARJETAS = ['visa', 'mastercard'];
@@ -2756,11 +2756,13 @@ async function importarDesdeEnlace() {
     const txt = await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).text();
     const datos = JSON.parse(txt);
     const hojas = Object.keys(datos).filter(h => HOJAS.includes(h) && Array.isArray(datos[h].rows));
+    // Registros a borrar (por ejemplo, duplicados): { borrar: { Hoja: [ids] } }; solo los que existen
+    const aBorrar = Object.entries(datos.borrar || {}).filter(([h]) => HOJAS.includes(h)).flatMap(([h, ids]) => (ids || []).map(id => [h, id, S.data[h].find(r => r.id === id)])).filter(x => x[2]);
     // Ajustes que puede traer el enlace (solo estos campos)
     const cfgOk = ['presupuesto', 'topeTarjetas', 'mesesObjetivo', 'diaCobro', 'cobroHabil'];
     const cfgNuevo = datos.cfg && typeof datos.cfg === 'object' ? Object.fromEntries(Object.entries(datos.cfg).filter(([k, v]) => cfgOk.includes(k) && isFinite(+v) && +v >= 0).map(([k, v]) => [k, +v])) : {};
-    if (!hojas.length && !Object.keys(cfgNuevo).length) throw new Error('El enlace no tiene datos para importar.');
-    const resumen = [...hojas.map(h => `${datos[h].rows.length} ${h.toLowerCase()}`), ...(Object.keys(cfgNuevo).length ? ['tus topes de gasto'] : [])].join(' y ');
+    if (!hojas.length && !Object.keys(cfgNuevo).length && !aBorrar.length) throw new Error('El enlace no tiene datos para importar.');
+    const resumen = [...hojas.map(h => `${datos[h].rows.length} ${h.toLowerCase()}`), ...(Object.keys(cfgNuevo).length ? ['tus topes de gasto'] : []), ...(aBorrar.length ? [`se borran: ${aBorrar.map(([, , r]) => `"${r.concepto || r.descripcion || r.activo}"`).join(', ')}`] : [])].join(' y ');
     if (!confirm(`Se van a cargar ${resumen}. Si ya estaban cargados, se actualizan sin duplicarse. ¿Continuar?`)) return;
     const ahora = new Date().toISOString();
     for (const h of hojas) {
@@ -2778,6 +2780,7 @@ async function importarDesdeEnlace() {
         encolar({ op: 'upsert', hoja: h, row });
       }
     }
+    for (const [h, id] of aBorrar) { registrarCambio(h, S.data[h].find(r => r.id === id), null); borrarLocal(h, id); encolar({ op: 'delete', hoja: h, id }); }
     if (Object.keys(cfgNuevo).length) { Object.assign(S.cfg, cfgNuevo); guardarCfg(); }
     guardarDatos();
     toast(`Listo: ${resumen}. ${S.cfg.scriptUrl ? 'Se está guardando en tu planilla; puede tardar unos minutos.' : 'Configurá la URL del script para guardarlo en tu planilla.'}`, 'ok', 9000);
