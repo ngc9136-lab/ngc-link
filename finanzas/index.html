@@ -345,7 +345,7 @@ const LS = {
 /** Versión mínima del script de Google que necesita esta app (ver apps-script/Code.gs). */
 const VERSION_SCRIPT_MIN = 5;
 /** Versión visible de la app (se ve en Más). Cambiarla junto con VERSION en sw.js. */
-const APP_VERSION = '2026-10-07.8';
+const APP_VERSION = '2026-10-07.9';
 const HOJAS = ['Ingresos', 'Gastos', 'Cuotas', 'Inversiones', 'Vencimientos', 'Objetivos', 'Historial'];
 const NUMERICOS = ['monto', 'montoCuota', 'cuotasTotales', 'cantidad', 'precioCompra', 'tcCompra', 'meta', 'saldoInicial', 'patrimonioARS', 'patrimonioUSD', 'dolar'];
 const TARJETAS = ['visa', 'mastercard'];
@@ -1752,11 +1752,13 @@ function renderMes() {
   const diasCobro = diffDays(hoyS, c.cobro);
   const reserva = sum(t.items.filter(i => i.tipo === 'fci'), i => +i.cantidad || 0);
   const peSin = { items: pe.items.filter(i => i.origen !== 'Ahorro') }; peSin.total = sum(peSin.items, i => i.ars);
-  const ahorroPend = pe.total - peSin.total;
+  const ahorroIdeal = pe.total - peSin.total;
   const sobra = t.total - peSin.total; // igual que la celda Sobra (F33) de la planilla
+  // La cuota de ahorro es una meta, no una deuda: no va en "Falta pagar" y se separa lo que alcanza (como mucho, lo que sobra)
+  const ahorroPend = Math.round(Math.max(0, Math.min(ahorroIdeal, sobra)));
   const disponible = sobra - ahorroPend; // después de separar la cuota de ahorro
   const diasRest = diffDays(hoyS, fin) + 1;
-  const porDia = disponible / diasRest, porSemana = porDia * Math.min(7, diasRest);
+  const porDia = sobra / diasRest, porSemana = porDia * Math.min(7, diasRest);
   const p = S.ui.periodoMes;
   const desde = p === 'hoy' ? hoyS : p === 'semana' ? addDays(hoyS, -6) : c.desde;
   const gastosPer = S.data.Gastos.filter(g => g.ambito !== 'negocio' && g.fecha >= desde && g.fecha <= hoyS).sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
@@ -1792,9 +1794,9 @@ function renderMes() {
     ${bannersAlerta(false)}
     ${botonesComprobante()}
     <div class="mes-grid"><div class="mes-col">
-    <div class="card card-pend"><h2>⏳ Falta pagar hasta el cobro<span class="sp"></span><span class="mid num neg">${m(pe.total)}</span></h2>
+    <div class="card card-pend"><h2>⏳ Falta pagar hasta el cobro<span class="sp"></span><span class="mid num neg">${m(peSin.total)}</span></h2>
       <div class="small" style="margin:-4px 0 8px">Tenés ${m(t.total)} en pesos · cuando pagues todo te ${sobra >= 0 ? `sobran <b class="pos">${m(sobra)}</b>` : `faltan <b class="neg">${m(-sobra)}</b>`} hasta el cobro (${fmtDM(c.cobro)}).</div>
-      <div class="list">${pe.items.map(i => {
+      <div class="list">${peSin.items.map(i => {
         const esPlan = String(i.k || '').startsWith('plan:'), idPlan = esPlan ? i.k.slice(5) : '';
         const editar = i.venc ? `data-venc-edit ${keyV(i.venc)}` : esPlan ? `data-edit="Vencimientos" data-id="${esc(idPlan)}"` : `data-pagar-fijo="${esc(i.k)}"`;
         const borrar = i.venc ? `data-borrar-pend="venc" ${keyV(i.venc)}` : `data-borrar-pend="${esPlan ? 'plan' : 'fijo'}" data-k="${esc(i.k)}"`;
@@ -1829,7 +1831,7 @@ function renderMes() {
       </div>
       ${ahorroPend > 0 ? `<p class="small" style="margin:10px 0 0">🐷 Si además separás la cuota de ahorro (${m(ahorroPend)}), te quedan <b class="${disponible >= 0 ? 'pos' : 'neg'}">${m(disponible)}</b>.</p>` : ''}
       <div class="row2" style="margin-top:12px">
-        <div class="stat"><div class="l">Podés gastar por día</div><div class="v num">${m(Math.max(porDia, 0))}</div><div class="small muted">${diasRest} día(s) hasta el cobro${ahorroPend > 0 ? ', ya separando el ahorro' : ''}</div></div>
+        <div class="stat"><div class="l">Podés gastar por día</div><div class="v num">${m(Math.max(porDia, 0))}</div><div class="small muted">${diasRest} día(s) hasta el cobro</div></div>
         <div class="stat"><div class="l">Gastado hoy (día a día)</div><div class="v num ${gastadoHoy > Math.max(porDia, 0) ? 'neg' : ''}">${m(gastadoHoy)}</div><div class="small muted">podés por semana: ${m(Math.max(porSemana, 0))}</div></div>
       </div>
       ${!t.items.length ? '<div class="btns" style="margin-top:10px"><button class="btn pri" data-nueva-inv="liquidez">+ Cargar lo que tengo hoy</button></div>' : ''}
@@ -1837,8 +1839,13 @@ function renderMes() {
     </div>
 
     <div class="card"><h2>🐷 Cuota de ahorro del mes${ahorro ? `<span class="sp"></span>${pill(ahorro.estado === 'pagado' ? 'ok' : ahorro.fecha < hoyS ? 'bad' : 'warn')}` : ''}</h2>
-      ${ahorro && +ahorro.monto > 0 ? `<div class="big num">${m(+ahorro.monto)}</div><div class="small muted">${ahorro.estado === 'pagado' ? 'Ya la separaste este mes. ¡Bien!' : `Separala apenas cobres (antes del ${fmtDM(ahorro.fecha)}) y tocá "✓ Separado" arriba.`}</div>
-        <div class="small" style="margin-top:6px">${baldes.map(b => `${b.ico} ${b.nombre}: ${m(b.aporte)}`).join(' · ')}</div>` : '<p class="small muted" style="margin:0">Definí las metas en Más → Objetivos para calcular cuánto separar por mes.</p>'}</div>
+      ${ahorro && +ahorro.monto > 0 ? (ahorro.estado === 'pagado' ? `<div class="big num pos">${m(+ahorro.monto)}</div><div class="small muted">Ya la separaste este período. ¡Bien!</div>
+        <div class="btns" style="margin-top:10px"><button class="btn sm" data-despagar ${keyV(ahorro)}>↩ Deshacer</button></div>`
+        : `<div class="big num ${ahorroPend > 0 ? 'pos' : 'alerta'}">${m(ahorroPend)}</div>
+        <div class="small">${ahorroPend >= ahorroIdeal ? 'Es lo que necesitás separar para llegar a tus metas.' : ahorroPend > 0 ? `Es lo que te sobra después de pagar todo. <span class="alerta">Para llegar a las metas haría falta ${m(ahorroIdeal)}</span>.` : `<span class="alerta">Este período no te sobra para ahorrar.</span> Para las metas haría falta ${m(ahorroIdeal)}.`}</div>
+        <div class="small muted" style="margin-top:6px">Ideal por meta: ${baldes.map(b => `${b.ico} ${b.nombre} ${m(b.aporte)}`).join(' · ')}</div>
+        ${ahorroPend > 0 ? `<div class="btns" style="margin-top:10px"><button class="btn sm okb" data-separar="${ahorroPend}" ${keyV(ahorro)}>✓ Separé ${m(ahorroPend)}</button><button class="btn sm" data-venc-edit ${keyV(ahorro)}>✏️ Otro monto</button></div>` : ''}`)
+        : '<p class="small muted" style="margin:0">Definí las metas en Más → Objetivos para calcular cuánto separar por mes.</p>'}</div>
 
     <div class="card"><h2>💳 Tarjetas y cuotas</h2><div class="list">
       ${fila('Tarjetas este mes', topeT > 0 ? `${m(tj)} <span class="small muted">de ${m(topeT)}</span>` : m(tj), topeT > 0 ? `Te quedan ${m(Math.max(topeT - tj, 0))} del tope` : 'Poné un tope en Más → Ajustes')}
@@ -2802,6 +2809,7 @@ document.addEventListener('click', e => {
   if (ds.periodoMes) { S.ui.periodoMes = ds.periodoMes; renderTodo(); return; }
   if (ds.pagarFijo !== undefined) { const it = pendienteDelMes().items.find(x => x.k === ds.pagarFijo); if (it) abrirForm('Gastos', null, { vals: { ...it.gasto, fecha: hoy() }, titulo: 'gasto (confirmá el monto)' }); return; }
   if ('pagar' in ds) { const v = buscarVenc(t); if (v) marcarVenc(v, 'pagado'); return; }
+  if (ds.separar) { const v = buscarVenc(t); if (v) marcarVenc({ ...v, auto: true, monto: +ds.separar }, 'pagado'); return; }
   if (ds.deshacerGasto) { const g = S.data.Gastos.find(x => x.id === ds.deshacerGasto); if (g && confirm(`¿Deshacer el pago "${g.descripcion}" (${fmtMon(+g.monto, g.moneda)})? Vuelve a la lista de pendientes.`)) { borrarFila('Gastos', g.id); toast('Pago deshecho', 'ok', 2200); } return; }
   if ('despagar' in ds) { const v = buscarVenc(t); if (v) marcarVenc(v, 'pendiente'); return; }
   if ('vencEdit' in ds) {
