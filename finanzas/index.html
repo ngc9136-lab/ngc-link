@@ -345,7 +345,7 @@ const LS = {
 /** Versión mínima del script de Google que necesita esta app (ver apps-script/Code.gs). */
 const VERSION_SCRIPT_MIN = 5;
 /** Versión visible de la app (se ve en Más). Cambiarla junto con VERSION en sw.js. */
-const APP_VERSION = '2026-10-07.7';
+const APP_VERSION = '2026-10-07.8';
 const HOJAS = ['Ingresos', 'Gastos', 'Cuotas', 'Inversiones', 'Vencimientos', 'Objetivos', 'Historial'];
 const NUMERICOS = ['monto', 'montoCuota', 'cuotasTotales', 'cantidad', 'precioCompra', 'tcCompra', 'meta', 'saldoInicial', 'patrimonioARS', 'patrimonioUSD', 'dolar'];
 const TARJETAS = ['visa', 'mastercard'];
@@ -1062,7 +1062,9 @@ function quoteBox(nombre, valor, ts, stale) {
 function bannersAlerta(conMercado = true) {
   let h = '';
   const vs = vencimientosTodos().filter(v => v.estado !== 'pagado' && v.origen !== 'ahorro'); // la cuota de ahorro es una meta, no una deuda
-  const criticos = vs.filter(v => diffDays(hoy(), v.fecha) <= 2);
+  // La parte en dólares del resumen se paga junto con los pesos: se avisa como "Resumen Visa", una sola vez
+  const sinUSD = v => (/^Resumen /.test(v.concepto || '') ? { ...v, concepto: v.concepto.replace(/\s*\(d[oó]lares\)/i, '') } : v);
+  const criticos = vs.filter(v => diffDays(hoy(), v.fecha) <= 2).map(sinUSD).filter((v, i, a) => a.findIndex(x => x.concepto === v.concepto) === i);
   if (criticos.length) {
     const venc = criticos.filter(v => v.fecha < hoy()).length;
     h += `<div class="banner bad" role="alert"><span class="bi">⛔</span><div><b>Urgente:</b> ${venc ? `${venc} pago(s) vencido(s)` : ''}${venc && criticos.length - venc ? ' y ' : ''}${criticos.length - venc ? `${criticos.length - venc} que vence(n) en 2 días o menos` : ''}: ${criticos.slice(0, 3).map(v => esc(v.concepto)).join(', ')}. <button data-tab="vencimientos">Ver vencimientos</button></div></div>`;
@@ -1239,6 +1241,23 @@ function pendienteDelMes() {
     const it = { k, concepto: g.descripcion, ars, fecha: fechaEnCiclo(c, +g.fecha.slice(8, 10)), origen: g.categoria === 'Tarjeta de crédito' ? 'Tarjeta (estimado)' : 'Fijo (estimado)',
       gasto: { categoria: g.categoria, descripcion: g.descripcion, monto: +g.monto, moneda: g.moneda, medio: g.medio, fijo: g.fijo, ambito: 'personal', devuelto: 'no' } };
     porClave.set(k, it); items.push(it);
+  }
+  // Resumen de tarjeta = pesos + dólares al oficial, en una sola línea (los dólares no van aparte)
+  const ofi = S.quotes.dolar.oficial?.venta || dolar();
+  for (const marca of TARJETAS.map(m => MEDIOS[m])) {
+    const nom = normTexto('resumen ' + marca);
+    const esUSD = i => i.venc && i.venc.moneda === 'USD' && normTexto(i.concepto).startsWith(nom);
+    const usd = items.filter(esUSD); if (!usd.length) continue;
+    const main = items.find(i => !esUSD(i) && normTexto(i.concepto) === nom);
+    const pagadoARS = !main && (plan.some(p => p.k === nom && p.falta <= 0) || vencimientosTodos().some(v => v.estado === 'pagado' && v.moneda !== 'USD' && normTexto(v.concepto) === nom && enCiclo(v.fecha, c)));
+    if (!main && !pagadoARS) continue;
+    for (const u of usd) items.splice(items.indexOf(u), 1); // ya pagado con los pesos, o se suma a la línea en pesos
+    if (!main) continue;
+    const dol = sum(usd, u => +u.venc.monto), pesos = main.ars;
+    main.ars = pesos + dol * ofi;
+    main.origen += ` · ${fmtMon(pesos, 'ARS')} + ${fmtMon(dol, 'USD')} al oficial (${fmtMon(ofi, 'ARS')})`;
+    if (main.gasto) main.gasto.monto = Math.round(main.ars);
+    main.usdVencs = usd.map(u => u.venc);
   }
   items.sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
   return { items, total: sum(items, i => i.ars) };
@@ -2222,11 +2241,12 @@ function cardDesgloseTarjetas(ym) {
     const tCuotas = sum(cuotas, i => i.ars), tCompras = sum(compras, i => i.ars);
     const tImp = r.total - tCuotas - tCompras - sum(usd, i => i.ars); // impuestos y cargos = lo que falta para llegar al total
     const venc = S.data.Vencimientos.find(v => v.origen !== 'omitido' && /^Resumen/.test(v.concepto || '') && normTexto(v.concepto).includes(normTexto(r.marca)) && !/dolares/.test(normTexto(v.concepto)) && (v.fecha || '').slice(0, 7) === (r.vence || '').slice(0, 7));
-    const pagado = venc && venc.estado === 'pagado';
+    const pagado = (venc && venc.estado === 'pagado') || planDePagos().some(p => p.k === normTexto('resumen ' + r.marca) && p.plan > 0 && p.falta <= 0);
+    const ofi = S.quotes.dolar.oficial?.venta || dolar();
     const linea = i => `<div class="item"><div class="main"><div class="t">${esc(i.desc)}${i.negocio ? ' <span class="tag">🏢 negocio</span>' : ''}</div><div class="s">${i.fecha ? fmtFecha(i.fecha) : ''}${i.tipo === 'cuota' ? ` · cuota ${i.n} de ${i.N}${i.n === i.N ? ' (última)' : ` · quedan ${i.N - i.n}`}` : ''}</div></div><div class="r"><div class="a num ${i.ars < 0 ? 'pos' : ''}">${i.usd && !i.ars ? fmtMon(i.usd, 'USD') : fmtMon(i.ars, 'ARS')}</div></div></div>`;
     const grupo = (tit, lista, total, extra = '', abierto = false) => lista.length ? `<details ${abierto ? 'open' : ''} style="border-top:1px solid var(--line);padding:8px 0"><summary style="cursor:pointer;display:flex;gap:8px;align-items:center"><span>${tit}</span><span style="flex:1"></span><b class="num">${total}</b></summary>${extra}<div class="list">${lista.map(linea).join('')}</div></details>` : '';
     return `<div class="card"><h2>💳 Resumen ${esc(r.marca)}<span class="sp"></span><span class="tag ${pagado ? 'ok' : 'bad'}">${pagado ? '✓ pagado' : 'a pagar'}</span></h2>
-      <div class="big num ${pagado ? 'pos' : 'neg'}">${fmtMon(r.total, 'ARS')}</div>${r.totalUSD ? `<div class="mid num ${pagado ? 'pos' : 'neg'}">+ ${fmtMon(r.totalUSD, 'USD')}</div>` : ''}
+      <div class="big num ${pagado ? 'pos' : 'neg'}">${fmtMon(r.total, 'ARS')}</div>${r.totalUSD ? `<div class="mid num ${pagado ? 'pos' : 'neg'}">+ ${fmtMon(r.totalUSD, 'USD')}</div><div class="small">Todo en pesos (dólar oficial ${fmtMon(ofi, 'ARS')}): <b class="num ${pagado ? 'pos' : 'neg'}">${fmtMon(r.total + r.totalUSD * ofi, 'ARS')}</b></div>` : ''}
       <div class="small muted">Vence ${fmtFecha(r.vence)} · cerró ${fmtFecha(r.cierre)}${r.minimo ? ` · mínimo ${fmtMon(r.minimo, 'ARS')}` : ''}${r.proxVence ? ` · el próximo cierra ${fmtFecha(r.proxCierre)} y vence ${fmtFecha(r.proxVence)}` : ''}</div>
       <div class="legend" style="margin:10px 0 4px">${tCuotas ? `<span><span class="tag">Cuotas</span>${fmtMon(tCuotas, 'ARS')}</span>` : ''}${tCompras ? `<span><span class="tag">En 1 pago</span>${fmtMon(tCompras, 'ARS')}</span>` : ''}${Math.round(tImp) ? `<span><span class="tag">Impuestos y cargos</span>${fmtMon(tImp, 'ARS')}</span>` : ''}${usd.length ? `<span><span class="tag">En dólares</span>${fmtMon(sum(usd, i => i.usd), 'USD')}</span>` : ''}</div>
       ${grupo(`🔁 Cuotas (${cuotas.length})`, cuotas.sort((a, b) => b.ars - a.ars), fmtMon(tCuotas, 'ARS'), '', true)}
