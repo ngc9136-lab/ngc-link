@@ -345,7 +345,7 @@ const LS = {
 /** Versión mínima del script de Google que necesita esta app (ver apps-script/Code.gs). */
 const VERSION_SCRIPT_MIN = 5;
 /** Versión visible de la app (se ve en Más). Cambiarla junto con VERSION en sw.js. */
-const APP_VERSION = '2026-10-07.3';
+const APP_VERSION = '2026-10-07.4';
 const HOJAS = ['Ingresos', 'Gastos', 'Cuotas', 'Inversiones', 'Vencimientos', 'Objetivos', 'Historial'];
 const NUMERICOS = ['monto', 'montoCuota', 'cuotasTotales', 'cantidad', 'precioCompra', 'tcCompra', 'meta', 'saldoInicial', 'patrimonioARS', 'patrimonioUSD', 'dolar'];
 const TARJETAS = ['visa', 'mastercard'];
@@ -1462,17 +1462,37 @@ function analizarResumen(lineas) {
     }
     return '';
   };
-  const total = buscar(/(saldo actual|total a pagar|saldo a pagar|saldo total|importe a pagar)/);
+  const total = buscar(/(total a pagar|saldo actual|saldo a pagar|saldo total|importe a pagar)/);
   const minimo = buscar(/pago minimo/);
-  const vence = buscarF(/(vencimiento actual|vto\.? actual)/) || buscarF(/(fecha de vencimiento|vencimiento|vto)/);
-  const cierre = buscarF(/(cierre actual)/) || buscarF(/(fecha de cierre|cierre)/);
+  // Dólares: el segundo importe del renglón "TOTAL A PAGAR" (formato Galicia: pesos | dólares)
+  let totalUSD = NaN;
+  { const l = lineas.find(l => /total a pagar/.test(normTexto(l.texto))); if (l) { const v = importesDe(normTexto(l.texto).split('total a pagar')[1] || ''); if (v.length > 1) totalUSD = v[1]; } }
+  // Formato Galicia: un renglón con 6 fechas = cierre anterior, vto. anterior, cierre actual, vto. actual, próximo cierre, próximo vto.
+  let vence = '', cierre = '', proxCierre = '', proxVence = '';
+  { const re = /\d{1,2}[-\/][A-Za-z]{3}[-\/]\d{2}/g, l = lineas.find(l => (l.texto.match(re) || []).length >= 4);
+    if (l) { const fs = l.texto.match(re).map(buscarFecha); [cierre, vence, proxCierre, proxVence] = [fs[2], fs[3], fs[4] || '', fs[5] || '']; } }
+  vence = vence || buscarF(/(vencimiento actual|vto\.? actual)/) || buscarF(/(fecha de vencimiento|vencimiento|vto)/);
+  cierre = cierre || buscarF(/(cierre actual)/) || buscarF(/(fecha de cierre|cierre)/);
+  // Cuotas a vencer en los próximos resúmenes (Visa Galicia: meses en un renglón y montos en el siguiente)
+  const cuotasVencer = [];
+  { const i = lineas.findIndex(l => /cuotas a vencer/.test(normTexto(l.texto)));
+    if (i >= 0) { const meses = []; let montos = [];
+      for (const l of lineas.slice(i, i + 6)) { const ms = normTexto(l.texto).match(/(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)[\/-]\d{2}/g); if (ms && !meses.length) meses.push(...ms); else if (meses.length && !montos.length) { const v = importesDe(l.texto); if (v.length) montos = v; } }
+      meses.forEach((m, k) => { if (montos[k] > 0) cuotasVencer.push([m, montos[k]]); }); } }
   if (!(total > 0)) return { tipo: 'resumen', titulo: `Resumen ${marca}`, detalle: ['No encontré el total a pagar. Cargalo a mano.'], props: [] };
   const concepto = `Resumen ${marca}`;
   const props = [];
   const tpl = S.data.Vencimientos.find(v => v.origen === 'plantilla' && normTexto(v.concepto).includes(normTexto(concepto)));
   if (tpl) props.push({ hoja: 'Vencimientos', row: { ...tpl, monto: total, moneda: 'ARS', fecha: vence || tpl.fecha }, etiqueta: `Actualizar "${tpl.concepto}" del plan a` });
-  else props.push({ hoja: 'Vencimientos', row: { concepto, monto: total, moneda: 'ARS', fecha: vence || hoy(), medio, estado: 'pendiente', origen: 'manual' }, etiqueta: 'Nuevo pago pendiente' });
-  return { tipo: 'resumen', titulo: concepto, detalle: [`Total a pagar: <b>${fmtMon(total, 'ARS')}</b>`, vence ? `Vence: <b>${fmtFecha(vence)}</b>` : 'No encontré el vencimiento', isFinite(minimo) ? `Pago mínimo: ${fmtMon(minimo, 'ARS')}` : '', cierre ? `Cierre: ${fmtFecha(cierre)}` : ''].filter(Boolean), props };
+  else props.push({ hoja: 'Vencimientos', row: { id: `res-${medio}-${(vence || hoy()).slice(0, 7)}`, concepto, monto: total, moneda: 'ARS', fecha: vence || hoy(), medio, estado: 'pendiente', origen: 'manual' }, etiqueta: 'Nuevo pago pendiente' });
+  if (totalUSD > 0) props.push({ hoja: 'Vencimientos', row: { id: `res-usd-${medio}-${(vence || hoy()).slice(0, 7)}`, concepto: `${concepto} (dólares)`, monto: totalUSD, moneda: 'USD', fecha: vence || hoy(), medio, estado: 'pendiente', origen: 'manual' }, etiqueta: 'Parte en dólares' });
+  const debito = /debitaremos/.test(n);
+  return { tipo: 'resumen', titulo: concepto, props, detalle: [
+    `Total a pagar: <b>${fmtMon(total, 'ARS')}</b>${totalUSD > 0 ? ` + <b>${fmtMon(totalUSD, 'USD')}</b>` : ''}`,
+    vence ? `Vence: <b>${fmtFecha(vence)}</b>${debito ? ' · se debita solo de tu caja de ahorro' : ''}` : 'No encontré el vencimiento',
+    isFinite(minimo) ? `Pago mínimo: ${fmtMon(minimo, 'ARS')}` : '', cierre ? `Cierre: ${fmtFecha(cierre)}${proxVence ? ` · próximo cierre ${fmtFecha(proxCierre)}, vence ${fmtFecha(proxVence)}` : ''}` : '',
+    cuotasVencer.length ? `Cuotas que vienen: ${cuotasVencer.slice(0, 6).map(([m, v]) => `${m.replace(/^\w/, x => x.toUpperCase())} ${fmtMon(v, 'ARS')}`).join(' · ')}` : '',
+  ].filter(Boolean) };
 }
 
 /* ----- Ticket o factura de compra ----- */
@@ -1490,37 +1510,84 @@ function analizarTicket(texto) {
 }
 
 /** Punto de entrada: analiza el comprobante recién guardado y muestra qué propone registrar. */
+async function marcarComprobante(comp, estado, resumen) {
+  const id = String(comp).replace(/^local:/, '');
+  try { const r = await IDB.get(id); if (r) await IDB.put(id, { ...r, estado, resumen }); } catch (e) { /* sin IndexedDB */ }
+  renderComprobantes();
+}
+/** Ticket → propuesta de gasto (salvo que ya esté cargado el mismo día y monto). */
+function ticketAPropuesta(t) {
+  if (!(t.total > 0)) return { tipo: 'ticket', titulo: 'Ticket', detalle: ['No encontré el total.'], props: [], t };
+  const ya = S.data.Gastos.find(g => g.fecha === t.fecha && Math.abs(+g.monto - t.total) < 1);
+  if (ya) return { tipo: 'ticket', titulo: 'Ticket', detalle: [`Ya estaba cargado: ${esc(ya.descripcion)} ${fmtMon(+ya.monto, ya.moneda)} (${fmtFecha(ya.fecha)}).`], props: [], t, yaCargado: true };
+  return { tipo: 'ticket', titulo: `Ticket ${t.comercio}`, detalle: [`${esc(t.comercio)} · ${fmtFecha(t.fecha)} · ${t.categoria}${t.categoria === 'Supermercado' ? ' (se descuenta del presupuesto de comida)' : ''}`], t,
+    props: [{ hoja: 'Gastos', etiqueta: 'Gasto', row: { fecha: t.fecha, categoria: t.categoria, descripcion: t.comercio, monto: t.total, moneda: 'ARS', medio: 'debito', ambito: 'personal', fijo: 'no', devuelto: 'no' } }] };
+}
+/** Abre el comprobante, lo analiza y REGISTRA solo lo que encontró (se puede deshacer con un toque). */
 async function analizarComprobante(blob, tipo, comp) {
   const aviso = msg => toast(msg, 'info', 4000);
   try {
+    let r;
     if (tipo === 'application/pdf') {
       aviso('Leyendo el PDF…');
       const lineas = await leerPDF(blob);
-      const r = analizarRecibo(lineas) || analizarResumen(lineas);
-      if (r) return mostrarRevision(r, comp);
-      const t = analizarTicket(lineas.map(l => l.texto).join('\n'));
-      return abrirGastoDeTicket(t, comp, 'PDF');
+      r = analizarRecibo(lineas) || analizarResumen(lineas) || ticketAPropuesta(analizarTicket(lineas.map(l => l.texto).join('\n')));
+    } else {
+      const texto = await leerFoto(blob, aviso);
+      const lineasFoto = texto.split(/\n+/).map(s => ({ texto: s, items: s.split(/\s+/).map(x => ({ s: x, x: 0 })) }));
+      const res = /RECIBO DE REMUNERACIONES/i.test(texto) ? null : analizarResumen(lineasFoto);
+      r = res && res.props.length ? res : ticketAPropuesta(analizarTicket(texto));
     }
-    const texto = await leerFoto(blob, aviso);
-    const lineasFoto = texto.split(/\n+/).map(s => ({ texto: s, items: s.split(/\s+/).map(x => ({ s: x, x: 0 })) }));
-    const r = /RECIBO DE REMUNERACIONES/i.test(texto) ? null : analizarResumen(lineasFoto);
-    if (r && r.props.length) return mostrarRevision(r, comp);
-    return abrirGastoDeTicket(analizarTicket(texto), comp, 'foto');
+    if (!r.props.length) {
+      await marcarComprobante(comp, r.yaCargado ? 'registrado' : 'sin datos', r.detalle.join(' '));
+      if (r.yaCargado) return toast(r.detalle[0].replace(/<[^>]+>/g, ''), 'info', 5000);
+      const t = r.t || { fecha: hoy(), categoria: tipo === 'application/pdf' ? 'Tarjeta de crédito' : 'Otros', comercio: '', total: NaN };
+      return abrirGastoDeTicket(t, comp, tipo === 'application/pdf' ? 'PDF' : 'foto');
+    }
+    registrarAuto(r, comp);
   } catch (e) {
+    await marcarComprobante(comp, 'sin datos', e.message);
     toast('No pude leer el archivo automáticamente: ' + e.message + '. Completá los datos a mano.', 'warn', 6000);
     const esPdf = tipo === 'application/pdf';
     abrirForm('Gastos', null, { fijos: { comprobante: comp }, vals: esPdf ? { fecha: hoy(), categoria: 'Tarjeta de crédito', descripcion: 'Resumen de tarjeta', medio: 'debito' } : { fecha: hoy() }, titulo: esPdf ? 'gasto con resumen adjunto' : 'gasto con comprobante' });
     mostrarComprobanteEnForm(comp);
   }
 }
-function abrirGastoDeTicket(t, comp, origen) {
-  abrirForm('Gastos', null, { fijos: { comprobante: comp }, vals: { fecha: t.fecha, categoria: t.categoria, descripcion: t.comercio, monto: t.total > 0 ? t.total : '', medio: 'debito' }, titulo: 'gasto (revisá lo leído)' });
-  mostrarComprobanteEnForm(comp);
-  const body = $('#sheet-body');
-  const info = document.createElement('div'); info.className = 'banner ' + (t.total > 0 ? 'info' : 'warn');
-  info.innerHTML = `<span class="bi">🔎</span><div>${t.total > 0 ? `Leí la ${origen}: <b>${esc(t.comercio)}</b>, total <b>${fmtMon(t.total, 'ARS')}</b>, ${fmtFecha(t.fecha)}. Revisá y tocá Guardar.` : 'No encontré el total. Escribí el monto y tocá Guardar.'}${t.categoria === 'Supermercado' ? ' Se descuenta del presupuesto de comida.' : ''}</div>`;
-  body.prepend(info);
+const AREA = { Ingresos: '⬇️ Ingresos', Gastos: '⬆️ Gastos', Vencimientos: '⏳ Pagos del mes' };
+/** Guarda todo lo encontrado de una vez (un solo ↶ lo deshace) y muestra el resumen de lo registrado. */
+function registrarAuto(r, comp) {
+  const hechos = [];
+  for (const p of r.props) { const row = guardarFila(p.hoja, { ...p.row, comprobante: comp }, { render: false }); hechos.push({ p, row }); }
+  renderTodo();
+  for (const h of hechos) if (h.p.hoja === 'Gastos') subirComprobante(h.row.id);
+  marcarComprobante(comp, 'registrado', `${r.titulo}: ${hechos.map(h => `${h.row.concepto || h.row.descripcion} ${fmtMon(+h.row.monto, h.row.moneda)}`).join(' · ')}`);
+  formActual = null; revisionActual = null;
+  $('#sheet-title').textContent = `✅ ${r.titulo}: registrado`;
+  $('#sheet-body').innerHTML = `<div class="list">${r.detalle.map(d => `<div class="item"><div class="main"><div class="s" style="white-space:normal">${d}</div></div></div>`).join('')}</div>
+    <p class="small" style="margin:12px 0 6px"><b>Lo que cargué:</b></p>
+    <div class="list">${hechos.map(h => `<div class="item"><button class="main" style="text-align:left" data-edit="${h.p.hoja}" data-id="${esc(h.row.id)}"><div class="t" style="white-space:normal">${esc(h.row.concepto || h.row.descripcion)}</div><div class="s">${AREA[h.p.hoja]} · ${fmtFecha(h.row.fecha)}${h.p.etiqueta && /Actualizar/.test(h.p.etiqueta) ? ' · actualizado' : ''} · tocá para editar</div></button><div class="r"><div class="a num ${h.p.hoja === 'Ingresos' ? 'pos' : 'neg'}">${fmtMon(+h.row.monto, h.row.moneda)}</div></div></div>`).join('')}</div>
+    <div class="btns" style="margin-top:12px"><button type="button" class="btn pri" data-action="cerrar-sheet">Listo</button><button type="button" class="btn" data-deshacer-auto>↶ Deshacer todo</button></div>`;
+  $('#sheet').hidden = false; document.body.style.overflow = 'hidden';
 }
+/* Lista de comprobantes guardados en el celular, con su estado y botón para volver a analizarlos. */
+IDB.todos = async function () {
+  const db = await this.abrir();
+  return new Promise((ok, mal) => { const out = []; const rq = db.transaction('archivos').objectStore('archivos').openCursor(); rq.onsuccess = () => { const c = rq.result; if (c) { out.push({ id: c.key, ...c.value }); c.continue(); } else ok(out); }; rq.onerror = () => mal(rq.error); });
+};
+async function renderComprobantes() {
+  const cajas = $$('.lista-comp'); if (!cajas.length) return;
+  let todos = []; try { todos = (await IDB.todos()).sort((a, b) => (a.fecha < b.fecha ? 1 : -1)); } catch (e) { /* sin IndexedDB */ }
+  const est = { registrado: '<span class="tag ok">✅ registrado</span>', 'sin datos': '<span class="tag warn">⚠ revisar</span>' };
+  const html = todos.length ? todos.slice(0, 20).map(c => `<div class="item"><div class="main"><div class="t">${c.tipo === 'application/pdf' ? '📄' : '🧾'} ${esc(c.nombre || 'comprobante')}</div><div class="s" style="white-space:normal">${fmtHora(c.fecha)} · ${est[c.estado] || '<span class="tag">sin analizar</span>'} ${c.resumen ? esc(c.resumen).slice(0, 140) : ''}</div></div>
+      <div class="r" style="flex-direction:row;gap:6px"><button class="btn sm" data-ver-comp="local:${esc(c.id)}" aria-label="Ver">👁</button><button class="btn sm" data-analizar-comp="${esc(c.id)}">🔎 Analizar</button></div></div>`).join('')
+    : empty('Todavía no cargaste comprobantes en este celular.');
+  cajas.forEach(b => { b.innerHTML = html; });
+}
+async function reanalizar(id) {
+  const r = await IDB.get(id).catch(() => null); if (!r) return toast('No encontré ese comprobante en este celular.', 'warn');
+  analizarComprobante(r.blob, r.tipo === 'application/pdf' ? 'application/pdf' : (r.tipo || 'image/jpeg'), 'local:' + id);
+}
+
 let revisionActual = null;
 function mostrarRevision(r, comp) {
   revisionActual = { r, comp };
@@ -1550,6 +1617,8 @@ function confirmarRevision(f) {
 function botonesComprobante() {
   return `<div class="comp-bar"><button class="btn" data-foto>📷 Foto de ticket</button><button class="btn" data-adjuntar>📎 Resumen o archivo</button></div>`;
 }
+const cardComprobantes = () => `<div class="card"><h2>🧾 Comprobantes cargados</h2><div class="list lista-comp"></div>
+  <p class="small muted" style="margin:8px 0 0">"🔎 Analizar" lee el comprobante y registra lo que encuentra (sueldo, horas extras, pagos de tarjeta, gastos). Se deshace con ↶.</p></div>`;
 
 /* ---------- Comida: presupuesto del período y compras del día a día (como la columna "COMIDA" de la planilla) ---------- */
 function cardComida(c, diasRest) {
@@ -1706,8 +1775,11 @@ function renderMes() {
 
     <div class="card"><h2>⬇️ Cobrado este mes<span class="sp"></span><span class="mid num">${m(sum(ingresosMes, i => toARS(i.monto, i.moneda)))}</span></h2>
       <div class="list">${ingresosMes.map(i => `<button class="item" data-edit="Ingresos" data-id="${esc(i.id)}"><div class="main"><div class="t">${esc(i.concepto)}</div><div class="s">${fmtDM(i.fecha)}</div></div><div class="r"><div class="a num">${fmtMon(+i.monto, i.moneda)}</div></div></button>`).join('') || empty('Todavía no cargaste ingresos este mes.')}</div></div>
+
+    ${cardComprobantes()}
     </div></div>
     <p class="small muted" style="text-align:center">Inversiones y objetivos están en Más. Esta pantalla es solo la plata del mes.</p>`;
+  renderComprobantes();
 }
 /** Dinero disponible: cuentas y efectivo cargados en Inversiones como "Dinero disponible". */
 function dineroDisponible() {
@@ -2023,7 +2095,9 @@ function renderGastos() {
       <div class="small muted">Compras ${fmtV(total)} · cuotas ${fmtV(cuotasMes)} · fijos ${fmtV(fijos)}${presu ? ` · presupuesto ${fmtV(presu)} (${fmtPct(pct, 0)})` : ''}</div>${presu ? barra(pct, nv) : ''}
       ${porMedio.length ? `<div class="legend">${porMedio.map(([m, v]) => `<span><span class="tag">${MEDIOS[m]}</span>${fmtV(v)}</span>`).join('')}</div>` : ''}</div>
     <div class="card"><h2>Movimientos</h2><div class="list">${items.map(g => `<button class="item" data-edit="Gastos" data-id="${esc(g.id)}"><div class="main"><div class="t">${g.comprobante ? '📎 ' : ''}${esc(g.descripcion)}</div><div class="s">${fmtFecha(g.fecha)} · <span class="tag">${esc(g.categoria)}</span><span class="tag">${MEDIOS[g.medio] || ''}</span>${g.ambito === 'negocio' ? `<span class="tag">Negocio${g.devuelto === 'si' ? ' · devuelto' : ''}</span>` : ''}${g.fijo === 'si' ? '<span class="tag">Fijo</span>' : ''}</div></div><div class="r"><div class="a num">${fmtMon(+g.monto, g.moneda)}</div></div></button>`).join('') || empty('Sin gastos este mes. Tocá + para cargar uno.')}</div></div>
+    ${cardComprobantes()}
     <p class="small muted">Las compras en cuotas se cargan en la pestaña Cuotas.</p>`;
+  renderComprobantes();
 }
 
 /* =====================================================================
@@ -2572,6 +2646,8 @@ document.addEventListener('click', e => {
   if ('adjuntar' in ds) { modoAdjunto = 'nuevo'; $('#in-archivo').value = ''; $('#in-archivo').click(); return; }
   if ('adjuntarForm' in ds) { modoAdjunto = 'form'; $('#in-archivo').value = ''; $('#in-archivo').click(); return; }
   if (ds.verComp) { verComprobante(ds.verComp); return; }
+  if (ds.analizarComp) { reanalizar(ds.analizarComp); return; }
+  if ('deshacerAuto' in ds) { cerrarForm(); deshacer(); return; }
   if (ds.borrarGasto) { const g = S.data.Gastos.find(x => x.id === ds.borrarGasto); if (g && confirm(`¿Borrar "${g.descripcion}" (${fmtMon(+g.monto, g.moneda)})?`)) { borrarFila('Gastos', g.id); toast('Borrado. Podés deshacerlo con ↶.', 'ok', 2500); } return; }
   if ('crearComida' in ds) { abrirForm('Vencimientos', null, { fijos: { origen: 'plantilla', estado: 'pendiente' }, vals: { concepto: 'Comida', moneda: 'USD', monto: 500, fecha: c0Desde(), medio: 'debito' }, titulo: 'presupuesto de comida por período' }); return; }
   if ('nuevoPlan' in ds) { abrirForm('Vencimientos', null, { fijos: { origen: 'plantilla', estado: 'pendiente' }, vals: { fecha: hoy(), medio: 'debito' }, titulo: 'pago del plan mensual (solo importa el día)' }); return; }
