@@ -345,7 +345,7 @@ const LS = {
 /** Versión mínima del script de Google que necesita esta app (ver apps-script/Code.gs). */
 const VERSION_SCRIPT_MIN = 5;
 /** Versión visible de la app (se ve en Más). Cambiarla junto con VERSION en sw.js. */
-const APP_VERSION = '2026-10-07.9';
+const APP_VERSION = '2026-10-07.10';
 const HOJAS = ['Ingresos', 'Gastos', 'Cuotas', 'Inversiones', 'Vencimientos', 'Objetivos', 'Historial'];
 const NUMERICOS = ['monto', 'montoCuota', 'cuotasTotales', 'cantidad', 'precioCompra', 'tcCompra', 'meta', 'saldoInicial', 'patrimonioARS', 'patrimonioUSD', 'dolar'];
 const TARJETAS = ['visa', 'mastercard'];
@@ -364,7 +364,7 @@ const CRIPTO_EXTRA = { XRP: 'ripple', NEXO: 'nexo', XLM: 'stellar', SOL: 'solana
 const ESTABLES_USD = ['USDX'];
 
 const DEFAULT_CFG = {
-  scriptUrl: '', token: '', dolarTipo: 'mep', vista: 'ARS', presupuesto: 0, disponibleTarjetas: 0, mesesObjetivo: 12, topeTarjetas: 0, diaAhorro: 5, diaCobro: 1, cobroHabil: 0, comerciosNegocio: [],
+  scriptUrl: '', token: '', dolarTipo: 'mep', vista: 'ARS', presupuesto: 0, disponibleTarjetas: 0, mesesObjetivo: 12, topeTarjetas: 0, diaAhorro: 5, diaCobro: 1, cobroHabil: 0, comerciosNegocio: [], consumosNegocio: [],
   tarjetas: { visa: { cierre: 25, venc: 5 }, mastercard: { cierre: 25, venc: 5 } },
   umbrales: {
     ahorroOk: 20, ahorroAt: 10, gastoOk: 80, gastoAt: 100, cobOk: 110, cobAt: 100, invAt: 5,
@@ -1242,22 +1242,24 @@ function pendienteDelMes() {
       gasto: { categoria: g.categoria, descripcion: g.descripcion, monto: +g.monto, moneda: g.moneda, medio: g.medio, fijo: g.fijo, ambito: 'personal', devuelto: 'no' } };
     porClave.set(k, it); items.push(it);
   }
-  // Resumen de tarjeta = pesos + dólares al oficial, en una sola línea (los dólares no van aparte)
+  // Resumen de tarjeta = pesos + dólares al oficial − lo que paga el negocio, en una sola línea
   const ofi = S.quotes.dolar.oficial?.venta || dolar();
-  for (const marca of TARJETAS.map(m => MEDIOS[m])) {
-    const nom = normTexto('resumen ' + marca);
+  for (const medio of TARJETAS) {
+    const nom = normTexto('resumen ' + MEDIOS[medio]);
     const esUSD = i => i.venc && i.venc.moneda === 'USD' && normTexto(i.concepto).startsWith(nom);
-    const usd = items.filter(esUSD); if (!usd.length) continue;
+    const usd = items.filter(esUSD);
     const main = items.find(i => !esUSD(i) && normTexto(i.concepto) === nom);
     const pagadoARS = !main && (plan.some(p => p.k === nom && p.falta <= 0) || vencimientosTodos().some(v => v.estado === 'pagado' && v.moneda !== 'USD' && normTexto(v.concepto) === nom && enCiclo(v.fecha, c)));
     if (!main && !pagadoARS) continue;
     for (const u of usd) items.splice(items.indexOf(u), 1); // ya pagado con los pesos, o se suma a la línea en pesos
     if (!main) continue;
     const dol = sum(usd, u => +u.venc.monto), pesos = main.ars;
-    main.ars = pesos + dol * ofi;
-    main.origen += ` · ${fmtMon(pesos, 'ARS')} + ${fmtMon(dol, 'USD')} al oficial (${fmtMon(ofi, 'ARS')})`;
+    const r = ultimoResumen(medio), neg = r && r.vence >= c.desde && r.vence <= addDays(c.hasta, 7) ? negocioDeResumen(r) : 0;
+    main.ars = Math.max(0, pesos + dol * ofi - neg);
+    main.origen += ` · ${fmtMon(pesos, 'ARS')}${dol ? ` + ${fmtMon(dol, 'USD')} al oficial (${fmtMon(ofi, 'ARS')})` : ''}${neg > 0 ? ` − ${fmtMon(neg, 'ARS')} que paga el negocio` : ''}`;
     if (main.gasto) main.gasto.monto = Math.round(main.ars);
-    main.usdVencs = usd.map(u => u.venc);
+    main.usdVencs = usd.map(u => u.venc); main.negocio = neg;
+    if (main.ars < 1) items.splice(items.indexOf(main), 1);
   }
   items.sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
   return { items, total: sum(items, i => i.ars) };
@@ -1458,6 +1460,28 @@ function analizarRecibo(lineas) {
 }
 
 /* ----- Resumen de tarjeta ----- */
+/** Consumo de tarjeta que paga el negocio: por comercio (Ajustes) o marcado uno por uno (🏢 en el desglose). */
+const claveConsumo = (medio, i) => `${medio}|${i.fecha}|${normTexto(i.desc)}|${i.N}`;
+function esNegocioConsumo(medio, i) {
+  const nd = normTexto(i.desc);
+  return (S.cfg.comerciosNegocio || []).map(normTexto).filter(Boolean).some(k => nd.includes(k)) || (S.cfg.consumosNegocio || []).includes(claveConsumo(medio, i));
+}
+const negocioDeResumen = r => sum(r.items.filter(i => i.tipo !== 'impuesto' && esNegocioConsumo(r.medio, i)), i => i.ars);
+/** Gasto "El negocio me debe" por la cuota de este resumen (id fijo: no se duplica). */
+function filaNegocioConsumo(r, i) {
+  return { id: `neg-${normTexto(i.desc).replace(/\W+/g, '')}-${i.cuota ? i.cuota.replace('/', 'de') : 'unpago'}-${r.cierre.slice(0, 7)}`, fecha: r.cierre, categoria: 'Negocio', descripcion: `${i.desc}${i.cuota ? ` (cuota ${i.cuota})` : ''}`, monto: i.ars, moneda: 'ARS', medio: r.medio, ambito: 'negocio', fijo: 'no', devuelto: 'no' };
+}
+function marcarConsumoNegocio(medio, clave) {
+  const r = ultimoResumen(medio); const it = r && r.items.find(i => claveConsumo(medio, i) === clave); if (!it) return;
+  const lista = new Set(S.cfg.consumosNegocio || []), poner = !lista.has(clave);
+  if (poner) lista.add(clave); else lista.delete(clave);
+  S.cfg.consumosNegocio = [...lista]; guardarCfg();
+  const fila = filaNegocioConsumo(r, it);
+  if (poner && !S.data.Gastos.some(g => g.id === fila.id)) guardarFila('Gastos', fila);
+  else if (!poner && S.data.Gastos.some(g => g.id === fila.id)) borrarFila('Gastos', fila.id);
+  else renderTodo();
+  toast(poner ? `${it.desc}: lo paga el negocio (no suma en lo que pagás vos).` : `${it.desc}: vuelve a ser tuyo.`, 'ok', 3000);
+}
 /** Renglones de consumo del resumen (PDF): fecha al principio, cuota "nn/nn", pesos (x 400–520) y dólares (x ≥ 520). */
 function consumosResumen(lineas) {
   const out = [], imp = i => /^-?\d{1,3}(\.\d{3})*,\d{2}$/.test(i.s);
@@ -1568,6 +1592,11 @@ function analizarResumen(lineas) {
   }
   const debito = /debitaremos/.test(n);
   const items = consumosResumen(lineas);
+  // Consumos marcados uno por uno como del negocio (por ejemplo, la cuota siguiente de una compra ya marcada)
+  for (const i of items.filter(i => (S.cfg.consumosNegocio || []).includes(claveConsumo(medio, i)) && i.ars > 0)) {
+    const fila = filaNegocioConsumo({ medio, cierre: cierre || hoy() }, i);
+    if (!props.some(p => p.row.id === fila.id)) props.push({ hoja: 'Gastos', etiqueta: 'El negocio te debe', row: fila });
+  }
   const resumen = items.length && (cierre || vence) ? { medio, marca, cierre: cierre || vence, vence: vence || cierre, proxCierre, proxVence, total, totalUSD: totalUSD > 0 ? totalUSD : 0, minimo: isFinite(minimo) ? minimo : null, cuotasVencer, items } : null;
   return { tipo: 'resumen', titulo: concepto, props, resumen, detalle: [
     `Total a pagar: <b>${fmtMon(total, 'ARS')}</b>${totalUSD > 0 ? ` + <b>${fmtMon(totalUSD, 'USD')}</b>` : ''}`,
@@ -1754,6 +1783,7 @@ function renderMes() {
   const peSin = { items: pe.items.filter(i => i.origen !== 'Ahorro') }; peSin.total = sum(peSin.items, i => i.ars);
   const ahorroIdeal = pe.total - peSin.total;
   const sobra = t.total - peSin.total; // igual que la celda Sobra (F33) de la planilla
+  const negPend = sum(peSin.items, i => i.negocio || 0);
   // La cuota de ahorro es una meta, no una deuda: no va en "Falta pagar" y se separa lo que alcanza (como mucho, lo que sobra)
   const ahorroPend = Math.round(Math.max(0, Math.min(ahorroIdeal, sobra)));
   const disponible = sobra - ahorroPend; // después de separar la cuota de ahorro
@@ -1829,6 +1859,7 @@ function renderMes() {
         ${fila('− Falta pagar hasta el cobro', m(peSin.total), `${peSin.items.length} pago(s) pendiente(s)`)}
         ${fila('<b>= Sobra</b>', `<b class="${sobra >= 0 ? 'pos' : 'neg'}">${m(sobra)}</b>`)}
       </div>
+      ${negPend > 0 ? `<p class="small" style="margin:10px 0 0">🏢 De las tarjetas, <b class="pos">${m(negPend)}</b> los paga el negocio y no se cuentan en lo que pagás vos. Si el negocio no te los devuelve, te ${sobra - negPend >= 0 ? `sobran ${m(sobra - negPend)}` : `faltan <span class="neg">${m(negPend - sobra)}</span>`}. <button class="linkbtn" data-tab="gastos" data-vg-ir="negocio">Ver qué te debe</button></p>` : ''}
       ${ahorroPend > 0 ? `<p class="small" style="margin:10px 0 0">🐷 Si además separás la cuota de ahorro (${m(ahorroPend)}), te quedan <b class="${disponible >= 0 ? 'pos' : 'neg'}">${m(disponible)}</b>.</p>` : ''}
       <div class="row2" style="margin-top:12px">
         <div class="stat"><div class="l">Podés gastar por día</div><div class="v num">${m(Math.max(porDia, 0))}</div><div class="small muted">${diasRest} día(s) hasta el cobro</div></div>
@@ -1844,7 +1875,7 @@ function renderMes() {
         : `<div class="big num ${ahorroPend > 0 ? 'pos' : 'alerta'}">${m(ahorroPend)}</div>
         <div class="small">${ahorroPend >= ahorroIdeal ? 'Es lo que necesitás separar para llegar a tus metas.' : ahorroPend > 0 ? `Es lo que te sobra después de pagar todo. <span class="alerta">Para llegar a las metas haría falta ${m(ahorroIdeal)}</span>.` : `<span class="alerta">Este período no te sobra para ahorrar.</span> Para las metas haría falta ${m(ahorroIdeal)}.`}</div>
         <div class="small muted" style="margin-top:6px">Ideal por meta: ${baldes.map(b => `${b.ico} ${b.nombre} ${m(b.aporte)}`).join(' · ')}</div>
-        ${ahorroPend > 0 ? `<div class="btns" style="margin-top:10px"><button class="btn sm okb" data-separar="${ahorroPend}" ${keyV(ahorro)}>✓ Separé ${m(ahorroPend)}</button><button class="btn sm" data-venc-edit ${keyV(ahorro)}>✏️ Otro monto</button></div>` : ''}`)
+        <div class="btns" style="margin-top:10px">${ahorroPend > 0 ? `<button class="btn sm okb" data-separar="${ahorroPend}" ${keyV(ahorro)}>✓ Separé ${m(ahorroPend)}</button>` : ''}<button class="btn sm" data-venc-edit ${keyV(ahorro)}>✏️ Otro monto</button></div>`)
         : '<p class="small muted" style="margin:0">Definí las metas en Más → Objetivos para calcular cuánto separar por mes.</p>'}</div>
 
     <div class="card"><h2>💳 Tarjetas y cuotas</h2><div class="list">
@@ -2205,7 +2236,7 @@ function proyeccionCuotas(nMeses = 12) {
     const ym0 = (r.vence || r.cierre).slice(0, 7); mesResumen[medio] = ym0;
     // cuota n/N en el resumen que vence en ym0 → n+1 vence el mes siguiente, y así hasta N
     for (const it of r.items.filter(i => i.tipo === 'cuota')) for (let k = 0; k <= it.N - it.n; k++) {
-      const f = idx.get(addMonths(ym0, k)); if (f) f[medio].push({ desc: it.desc, n: it.n + k, N: it.N, ars: it.ars, negocio: it.negocio, fecha: it.fecha });
+      const f = idx.get(addMonths(ym0, k)); if (f) f[medio].push({ desc: it.desc, n: it.n + k, N: it.N, ars: it.ars, negocio: esNegocioConsumo(medio, it), fecha: it.fecha });
     }
   }
   for (const i of cuotasIndividuales()) {
@@ -2215,25 +2246,27 @@ function proyeccionCuotas(nMeses = 12) {
     if (col !== 'otras' && f[col].some(x => Math.abs(x.ars - i.ars) <= Math.max(1, i.ars * 0.01))) continue; // ya está en el resumen
     f[col].push({ desc: i.c.descripcion, n: i.n, N: i.N, ars: i.ars, negocio: i.c.ambito === 'negocio', id: i.c.id, medio: i.c.medio });
   }
-  for (const f of filas) { f.tVisa = sum(f.visa, x => x.ars); f.tMaster = sum(f.mastercard, x => x.ars); f.tOtras = sum(f.otras, x => x.ars); f.total = f.tVisa + f.tMaster + f.tOtras; }
+  // Los totales son lo tuyo: lo que paga el negocio se muestra aparte
+  const tuyo = l => sum(l.filter(x => !x.negocio), x => x.ars);
+  for (const f of filas) { f.tVisa = tuyo(f.visa); f.tMaster = tuyo(f.mastercard); f.tOtras = tuyo(f.otras); f.total = f.tVisa + f.tMaster + f.tOtras; f.negocio = sum([...f.visa, ...f.mastercard, ...f.otras].filter(x => x.negocio), x => x.ars); }
   return { filas, mesResumen };
 }
 const fmtCorto = v => (Math.abs(v) >= 1e6 ? fmtNum(v / 1e6, 2) + ' M' : Math.abs(v) >= 1e3 ? fmtNum(v / 1e3, 0) + ' mil' : fmtNum(v, 0));
-const itemCuota = x => `<div class="item"><div class="main"><div class="t">${esc(x.desc)}</div><div class="s">cuota ${x.n} de ${x.N}${x.n === x.N ? ' · <span class="pos">última</span>' : ` · quedan ${x.N - x.n}`}${x.negocio ? ' · 🏢 negocio' : ''}${x.medio && !TARJETAS.includes(x.medio) ? ` · ${MEDIOS[x.medio] || esc(x.medio)}` : ''}</div></div><div class="r"><div class="a num neg">${fmtMon(x.ars, 'ARS')}</div></div></div>`;
+const itemCuota = x => `<div class="item"><div class="main"><div class="t">${esc(x.desc)}</div><div class="s">cuota ${x.n} de ${x.N}${x.n === x.N ? ' · <span class="pos">última</span>' : ` · quedan ${x.N - x.n}`}${x.negocio ? ' · 🏢 lo paga el negocio (no suma)' : ''}${x.medio && !TARJETAS.includes(x.medio) ? ` · ${MEDIOS[x.medio] || esc(x.medio)}` : ''}</div></div><div class="r"><div class="a num ${x.negocio ? 'muted' : 'neg'}">${fmtMon(x.ars, 'ARS')}</div></div></div>`;
 function cardProyeccion() {
   const { filas, mesResumen } = proyeccionCuotas(12);
-  const conDatos = filas.filter(f => f.total > 0);
+  const conDatos = filas.filter(f => f.total > 0 || f.negocio > 0);
   const hayRes = Object.keys(mesResumen).length;
   const maxV = Math.max(...filas.map(f => f.total), 1);
   const col = (v, k) => `<td class="n num ${v ? '' : 'muted'}">${v ? fmtCorto(v) : '—'}</td>`;
   const termina = (f, k) => { const sig = filas[k + 1]; if (!sig) return []; return [...f.visa, ...f.mastercard, ...f.otras].filter(x => x.n === x.N); };
-  return `<div class="card"><h2>📅 Cuotas mes a mes<span class="sp"></span><span class="small muted">lo que pagás cada mes</span></h2>
+  return `<div class="card"><h2>📅 Cuotas mes a mes<span class="sp"></span><span class="small muted">lo que pagás vos cada mes</span></h2>
     ${hayRes ? '' : '<p class="small muted" style="margin:-4px 0 8px">Para ver Visa y Mastercard en detalle, cargá el PDF del resumen con 📎 en Gastos.</p>'}
     <table class="t"><thead><tr><th>Mes</th><th class="n">Visa</th><th class="n">Master</th><th class="n">Otras</th><th class="n">Total</th></tr></thead><tbody>
     ${filas.map(f => `<tr><td>${fmtMesCorto(f.ym)}<div class="bar"><span style="width:${f.total / maxV * 100}%"></span></div></td>${col(f.tVisa)}${col(f.tMaster)}${col(f.tOtras)}<td class="n num ${f.total ? 'neg' : 'muted'}"><b>${f.total ? fmtCorto(f.total) : '—'}</b></td></tr>`).join('')}
     </tbody></table>
-    <p class="small muted" style="margin:6px 0 0">Total 12 meses: <b class="num neg">${fmtMon(sum(filas, f => f.total), 'ARS')}</b>${hayRes ? ` · según el último resumen de ${Object.keys(mesResumen).map(m => MEDIOS[m]).join(' y ')}` : ''}. Tocá un mes para ver el detalle.</p></div>
-  ${conDatos.length ? `<div class="card"><h2>Detalle por mes</h2>${filas.map((f, k) => { if (!f.total) return ''; const fin = termina(f, k); return `<details ${k === 0 ? 'open' : ''} style="border-top:1px solid var(--line);padding:8px 0"><summary style="cursor:pointer;display:flex;gap:8px;align-items:center"><b>${fmtMes(f.ym)}</b><span class="sp" style="flex:1"></span><b class="num neg">${fmtMon(f.total, 'ARS')}</b></summary>
+    <p class="small muted" style="margin:6px 0 0">Total 12 meses: <b class="num neg">${fmtMon(sum(filas, f => f.total), 'ARS')}</b>${hayRes ? ` · según el último resumen de ${Object.keys(mesResumen).map(m => MEDIOS[m]).join(' y ')}` : ''}. ${sum(filas, f => f.negocio) > 0 ? ` El negocio paga aparte ${fmtMon(sum(filas, f => f.negocio), 'ARS')} (🏢, no suma).` : ''} Tocá un mes para ver el detalle.</p></div>
+  ${conDatos.length ? `<div class="card"><h2>Detalle por mes</h2>${filas.map((f, k) => { if (!f.total && !f.negocio) return ''; const fin = termina(f, k); return `<details ${k === 0 ? 'open' : ''} style="border-top:1px solid var(--line);padding:8px 0"><summary style="cursor:pointer;display:flex;gap:8px;align-items:center"><b>${fmtMes(f.ym)}</b><span class="sp" style="flex:1"></span><b class="num neg">${fmtMon(f.total, 'ARS')}</b></summary>
       ${[['visa', '💳 Visa', f.tVisa], ['mastercard', '💳 Mastercard', f.tMaster], ['otras', '🧾 Otras cuotas', f.tOtras]].filter(([m]) => f[m].length).map(([m, tit, t]) => `<div class="small" style="display:flex;margin:10px 0 2px"><b>${tit}</b><span style="flex:1"></span><b class="num">${fmtMon(t, 'ARS')}</b></div><div class="list">${f[m].sort((a, b) => b.ars - a.ars).map(itemCuota).join('')}</div>`).join('')}
       ${fin.length && filas[k + 1] ? `<p class="small pos" style="margin:8px 0 0">✓ Desde ${fmtMes(filas[k + 1].ym).toLowerCase()} se liberan ${fmtMon(sum(fin, x => x.ars), 'ARS')} (${fin.map(x => esc(x.desc)).join(', ')}).</p>` : ''}</details>`; }).join('')}</div>` : ''}`;
 }
@@ -2250,17 +2283,20 @@ function cardDesgloseTarjetas(ym) {
     const venc = S.data.Vencimientos.find(v => v.origen !== 'omitido' && /^Resumen/.test(v.concepto || '') && normTexto(v.concepto).includes(normTexto(r.marca)) && !/dolares/.test(normTexto(v.concepto)) && (v.fecha || '').slice(0, 7) === (r.vence || '').slice(0, 7));
     const pagado = (venc && venc.estado === 'pagado') || planDePagos().some(p => p.k === normTexto('resumen ' + r.marca) && p.plan > 0 && p.falta <= 0);
     const ofi = S.quotes.dolar.oficial?.venta || dolar();
-    const linea = i => `<div class="item"><div class="main"><div class="t">${esc(i.desc)}${i.negocio ? ' <span class="tag">🏢 negocio</span>' : ''}</div><div class="s">${i.fecha ? fmtFecha(i.fecha) : ''}${i.tipo === 'cuota' ? ` · cuota ${i.n} de ${i.N}${i.n === i.N ? ' (última)' : ` · quedan ${i.N - i.n}`}` : ''}</div></div><div class="r"><div class="a num ${i.ars < 0 ? 'pos' : ''}">${i.usd && !i.ars ? fmtMon(i.usd, 'USD') : fmtMon(i.ars, 'ARS')}</div></div></div>`;
+    const linea = i => { const neg = i.tipo !== 'impuesto' && i.fecha && esNegocioConsumo(r.medio, i), porComercio = neg && !(S.cfg.consumosNegocio || []).includes(claveConsumo(r.medio, i));
+      const btn = i.tipo === 'impuesto' || !i.fecha || porComercio ? '' : `<button class="btn sm" data-neg-consumo="${esc(claveConsumo(r.medio, i))}" data-medio="${r.medio}" aria-label="${neg ? 'Es mío' : 'Lo paga el negocio'}">${neg ? '↩ Es mío' : '🏢 Negocio'}</button>`;
+      return `<div class="item"><div class="main"><div class="t">${esc(i.desc)}${neg ? ' <span class="tag">🏢 lo paga el negocio</span>' : ''}</div><div class="s">${i.fecha ? fmtFecha(i.fecha) : ''}${i.tipo === 'cuota' ? ` · cuota ${i.n} de ${i.N}${i.n === i.N ? ' (última)' : ` · quedan ${i.N - i.n}`}` : ''}</div></div><div class="r"><div class="a num ${i.ars < 0 ? 'pos' : neg ? 'muted' : ''}">${i.usd && !i.ars ? fmtMon(i.usd, 'USD') : fmtMon(i.ars, 'ARS')}</div>${btn}</div></div>`; };
     const grupo = (tit, lista, total, extra = '', abierto = false) => lista.length ? `<details ${abierto ? 'open' : ''} style="border-top:1px solid var(--line);padding:8px 0"><summary style="cursor:pointer;display:flex;gap:8px;align-items:center"><span>${tit}</span><span style="flex:1"></span><b class="num">${total}</b></summary>${extra}<div class="list">${lista.map(linea).join('')}</div></details>` : '';
     return `<div class="card"><h2>💳 Resumen ${esc(r.marca)}<span class="sp"></span><span class="tag ${pagado ? 'ok' : 'bad'}">${pagado ? '✓ pagado' : 'a pagar'}</span></h2>
       <div class="big num ${pagado ? 'pos' : 'neg'}">${fmtMon(r.total, 'ARS')}</div>${r.totalUSD ? `<div class="mid num ${pagado ? 'pos' : 'neg'}">+ ${fmtMon(r.totalUSD, 'USD')}</div><div class="small">Todo en pesos (dólar oficial ${fmtMon(ofi, 'ARS')}): <b class="num ${pagado ? 'pos' : 'neg'}">${fmtMon(r.total + r.totalUSD * ofi, 'ARS')}</b></div>` : ''}
+      ${negocioDeResumen(r) > 0 ? `<div class="small" style="margin:4px 0">🏢 De eso, <b class="pos">${fmtMon(negocioDeResumen(r), 'ARS')}</b> lo paga el negocio → lo tuyo: <b class="num ${pagado ? 'pos' : 'neg'}">${fmtMon(r.total - negocioDeResumen(r) + (r.totalUSD || 0) * ofi, 'ARS')}</b></div>` : ''}
       <div class="small muted">Vence ${fmtFecha(r.vence)} · cerró ${fmtFecha(r.cierre)}${r.minimo ? ` · mínimo ${fmtMon(r.minimo, 'ARS')}` : ''}${r.proxVence ? ` · el próximo cierra ${fmtFecha(r.proxCierre)} y vence ${fmtFecha(r.proxVence)}` : ''}</div>
       <div class="legend" style="margin:10px 0 4px">${tCuotas ? `<span><span class="tag">Cuotas</span>${fmtMon(tCuotas, 'ARS')}</span>` : ''}${tCompras ? `<span><span class="tag">En 1 pago</span>${fmtMon(tCompras, 'ARS')}</span>` : ''}${Math.round(tImp) ? `<span><span class="tag">Impuestos y cargos</span>${fmtMon(tImp, 'ARS')}</span>` : ''}${usd.length ? `<span><span class="tag">En dólares</span>${fmtMon(sum(usd, i => i.usd), 'USD')}</span>` : ''}</div>
       ${grupo(`🔁 Cuotas (${cuotas.length})`, cuotas.sort((a, b) => b.ars - a.ars), fmtMon(tCuotas, 'ARS'), '', true)}
       ${grupo(`🛒 Compras en 1 pago (${compras.length})`, compras.sort((a, b) => b.ars - a.ars), fmtMon(tCompras, 'ARS'))}
       ${grupo(`💵 En dólares (${usd.length})`, usd, fmtMon(sum(usd, i => i.usd), 'USD'), '<p class="small muted" style="margin:6px 0">Se pagan aparte, en dólares.</p>')}
       ${Math.round(tImp) ? grupo('🧾 Impuestos y cargos', Math.abs(tImp - sum(imps, i => i.ars)) > 1 ? [...imps, { desc: 'Otros ajustes del banco', ars: tImp - sum(imps, i => i.ars) }] : imps, fmtMon(tImp, 'ARS'), '<p class="small muted" style="margin:6px 0">Percepciones, IVA, sellos y comisiones (incluye devoluciones).</p>') : ''}
-      <p class="small muted" style="margin:8px 0 0"><button class="linkbtn" data-tab="cuotas">Ver cómo siguen las cuotas mes a mes →</button></p></div>`;
+      <p class="small muted" style="margin:8px 0 0">Tocá "🏢 Negocio" en un consumo que paga el negocio: no se suma en lo que pagás vos y queda en "Negocio me debe". <button class="linkbtn" data-tab="cuotas">Ver cómo siguen las cuotas mes a mes →</button></p></div>`;
   }).join('');
 }
 
@@ -2771,7 +2807,7 @@ function enviarForm() {
 document.addEventListener('click', e => {
   const t = e.target.closest('button, [data-tab]'); if (!t) return;
   const ds = t.dataset;
-  if (ds.tab) return irA(ds.tab);
+  if (ds.tab) { if (ds.vgIr) S.ui.vistaGastos = ds.vgIr; return irA(ds.tab); }
   if (ds.periodo) { S.ui.periodo = ds.periodo; return renderTodo(); }
   if (ds.mes) { S.ui[ds.mes] = addMonths(S.ui[ds.mes], +ds.d); return renderTodo(); }
   if (ds.vg) { S.ui.vistaGastos = ds.vg; return renderTodo(); }
@@ -2809,6 +2845,7 @@ document.addEventListener('click', e => {
   if (ds.periodoMes) { S.ui.periodoMes = ds.periodoMes; renderTodo(); return; }
   if (ds.pagarFijo !== undefined) { const it = pendienteDelMes().items.find(x => x.k === ds.pagarFijo); if (it) abrirForm('Gastos', null, { vals: { ...it.gasto, fecha: hoy() }, titulo: 'gasto (confirmá el monto)' }); return; }
   if ('pagar' in ds) { const v = buscarVenc(t); if (v) marcarVenc(v, 'pagado'); return; }
+  if (ds.negConsumo) { marcarConsumoNegocio(ds.medio, ds.negConsumo); return; }
   if (ds.separar) { const v = buscarVenc(t); if (v) marcarVenc({ ...v, auto: true, monto: +ds.separar }, 'pagado'); return; }
   if (ds.deshacerGasto) { const g = S.data.Gastos.find(x => x.id === ds.deshacerGasto); if (g && confirm(`¿Deshacer el pago "${g.descripcion}" (${fmtMon(+g.monto, g.moneda)})? Vuelve a la lista de pendientes.`)) { borrarFila('Gastos', g.id); toast('Pago deshecho', 'ok', 2200); } return; }
   if ('despagar' in ds) { const v = buscarVenc(t); if (v) marcarVenc(v, 'pendiente'); return; }
@@ -2917,6 +2954,7 @@ async function importarDesdeEnlace() {
     // Ajustes que puede traer el enlace (solo estos campos)
     const cfgOk = ['presupuesto', 'topeTarjetas', 'mesesObjetivo', 'diaCobro', 'cobroHabil'];
     const cfgNuevo = datos.cfg && typeof datos.cfg === 'object' ? Object.fromEntries(Object.entries(datos.cfg).filter(([k, v]) => cfgOk.includes(k) && isFinite(+v) && +v >= 0).map(([k, v]) => [k, +v])) : {};
+    if (datos.cfg && Array.isArray(datos.cfg.consumosNegocio)) cfgNuevo.consumosNegocio = [...new Set([...(S.cfg.consumosNegocio || []), ...datos.cfg.consumosNegocio.map(x => String(x).slice(0, 120)).filter(Boolean)])];
     if (datos.cfg && Array.isArray(datos.cfg.comerciosNegocio)) cfgNuevo.comerciosNegocio = [...new Set([...(S.cfg.comerciosNegocio || []), ...datos.cfg.comerciosNegocio.map(x => String(x).slice(0, 40)).filter(Boolean)])];
     // Detalle de resúmenes de tarjeta (consumos, cuotas, impuestos)
     const resTarj = (Array.isArray(datos.resumenes) ? datos.resumenes : []).filter(r => r && TARJETAS.includes(r.medio) && /^\d{4}-\d{2}-\d{2}$/.test(r.cierre || '') && Array.isArray(r.items) && isFinite(+r.total));
