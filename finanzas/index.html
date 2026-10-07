@@ -345,7 +345,7 @@ const LS = {
 /** Versión mínima del script de Google que necesita esta app (ver apps-script/Code.gs). */
 const VERSION_SCRIPT_MIN = 5;
 /** Versión visible de la app (se ve en Más). Cambiarla junto con VERSION en sw.js. */
-const APP_VERSION = '2026-10-07.10';
+const APP_VERSION = '2026-10-08.1';
 const HOJAS = ['Ingresos', 'Gastos', 'Cuotas', 'Inversiones', 'Vencimientos', 'Objetivos', 'Historial'];
 const NUMERICOS = ['monto', 'montoCuota', 'cuotasTotales', 'cantidad', 'precioCompra', 'tcCompra', 'meta', 'saldoInicial', 'patrimonioARS', 'patrimonioUSD', 'dolar'];
 const TARJETAS = ['visa', 'mastercard'];
@@ -1785,7 +1785,7 @@ function renderMes() {
   const sobra = t.total - peSin.total; // igual que la celda Sobra (F33) de la planilla
   const negPend = sum(peSin.items, i => i.negocio || 0);
   // La cuota de ahorro es una meta, no una deuda: no va en "Falta pagar" y se separa lo que alcanza (como mucho, lo que sobra)
-  const ahorroPend = Math.round(Math.max(0, Math.min(ahorroIdeal, sobra)));
+  const ahorroPend = Math.round(Math.max(0, Math.min(ahorroIdeal, sobra - reserva))); // la reserva (FCI en pesos) queda de resguardo hasta el cobro
   const disponible = sobra - ahorroPend; // después de separar la cuota de ahorro
   const diasRest = diffDays(hoyS, fin) + 1;
   const porDia = sobra / diasRest, porSemana = porDia * Math.min(7, diasRest);
@@ -1801,9 +1801,19 @@ function renderMes() {
   const todosV = vencimientosTodos();
   const pagadosVenc = todosV.filter(v => v.estado === 'pagado' && enCiclo(v.fecha, c));
   const ahorro = todosV.find(v => v.ref === `ahorro:${c.key}`);
-  const cuotas = cuotasIndividuales().filter(c => c.c.ambito !== 'negocio');
-  const cuotasMes = cuotas.filter(x => enCiclo(x.fecha, c)), cuotasRest = cuotas.filter(x => x.fecha > c.hasta);
-  const topeT = +S.cfg.topeTarjetas || 0, tj = sum(S.data.Gastos.filter(g => g.ambito !== 'negocio' && enCiclo(g.fecha, c) && (TARJETAS.includes(g.medio) || g.categoria === 'Tarjeta de crédito')), g => toARS(g.monto, g.moneda));
+  // Tarjetas: lo que dicen los resúmenes que vencen en el período (tu parte, sin lo del negocio) y las cuotas mes a mes
+  const ofiT = S.quotes.dolar.oficial?.venta || dolar();
+  const resPer = TARJETAS.map(md => ultimoResumen(md)).filter(r => r && r.vence >= c.desde && r.vence <= c.hasta).map(r => {
+    const nom = normTexto('resumen ' + r.marca), neg = negocioDeResumen(r), total = r.total + (r.totalUSD || 0) * ofiT;
+    const pagadoR = planDePagos().some(p => p.k === nom && p.plan > 0 && p.falta <= 0) || vencimientosTodos().some(v => v.estado === 'pagado' && v.moneda !== 'USD' && normTexto(v.concepto) === nom && enCiclo(v.fecha, c));
+    return { r, neg, total, tuyo: total - neg, pagado: pagadoR };
+  });
+  const proy = proyeccionCuotas(12).filas, fila0 = proy[0] || { visa: [], mastercard: [], otras: [], total: 0, negocio: 0 };
+  const cuotasMes = [...fila0.visa, ...fila0.mastercard, ...fila0.otras];
+  const rest = proy.slice(1).filter(f => f.total > 0), cuotasRestTotal = sum(rest, f => f.total);
+  const ultCierre = resPer.map(x => x.r.cierre).sort().pop() || '';
+  const comprasNuevas = S.data.Gastos.filter(g => g.ambito !== 'negocio' && TARJETAS.includes(g.medio) && ultCierre && g.fecha > ultCierre);
+  const topeT = +S.cfg.topeTarjetas || 0, tj = sum(resPer, x => x.tuyo);
   const nivel = sobra < 0 ? 'bad' : disponible < 0 ? 'warn' : 'ok';
   const m = v => fmtMon(v, 'ARS');
   const keyV = v => (v.id ? `data-id="${esc(v.id)}"` : `data-ref="${esc(v.ref)}"`);
@@ -1873,15 +1883,17 @@ function renderMes() {
       ${ahorro && +ahorro.monto > 0 ? (ahorro.estado === 'pagado' ? `<div class="big num pos">${m(+ahorro.monto)}</div><div class="small muted">Ya la separaste este período. ¡Bien!</div>
         <div class="btns" style="margin-top:10px"><button class="btn sm" data-despagar ${keyV(ahorro)}>↩ Deshacer</button></div>`
         : `<div class="big num ${ahorroPend > 0 ? 'pos' : 'alerta'}">${m(ahorroPend)}</div>
-        <div class="small">${ahorroPend >= ahorroIdeal ? 'Es lo que necesitás separar para llegar a tus metas.' : ahorroPend > 0 ? `Es lo que te sobra después de pagar todo. <span class="alerta">Para llegar a las metas haría falta ${m(ahorroIdeal)}</span>.` : `<span class="alerta">Este período no te sobra para ahorrar.</span> Para las metas haría falta ${m(ahorroIdeal)}.`}</div>
+        <div class="small">${ahorroPend >= ahorroIdeal ? 'Es lo que necesitás separar para llegar a tus metas.' : ahorroPend > 0 ? `Es lo que te sobra después de pagar todo${reserva > 0 ? `, dejando ${m(reserva)} en ${esc(t.items.filter(i => i.tipo === 'fci').map(i => i.activo).join(', '))} de resguardo` : ''}. <span class="alerta">Para llegar a las metas haría falta ${m(ahorroIdeal)}</span>.` : `<span class="alerta">Este período no te sobra para ahorrar.</span> Para las metas haría falta ${m(ahorroIdeal)}.`}</div>
         <div class="small muted" style="margin-top:6px">Ideal por meta: ${baldes.map(b => `${b.ico} ${b.nombre} ${m(b.aporte)}`).join(' · ')}</div>
         <div class="btns" style="margin-top:10px">${ahorroPend > 0 ? `<button class="btn sm okb" data-separar="${ahorroPend}" ${keyV(ahorro)}>✓ Separé ${m(ahorroPend)}</button>` : ''}<button class="btn sm" data-venc-edit ${keyV(ahorro)}>✏️ Otro monto</button></div>`)
         : '<p class="small muted" style="margin:0">Definí las metas en Más → Objetivos para calcular cuánto separar por mes.</p>'}</div>
 
     <div class="card"><h2>💳 Tarjetas y cuotas</h2><div class="list">
-      ${fila('Tarjetas este mes', topeT > 0 ? `${m(tj)} <span class="small muted">de ${m(topeT)}</span>` : m(tj), topeT > 0 ? `Te quedan ${m(Math.max(topeT - tj, 0))} del tope` : 'Poné un tope en Más → Ajustes')}
-      ${fila('Cuotas del período', m(sum(cuotasMes, x => x.ars)), cuotasMes.map(x => `${esc(x.c.descripcion)} ${x.n}/${x.N}`).join(' · ') || 'Sin cuotas en el período')}
-      ${fila('Cuotas que quedan', m(sum(cuotasRest, x => x.ars)), cuotasRest.length ? `${cuotasRest.length} cuota(s) · la última en ${fmtMesCorto(cuotasRest.map(x => x.ym).sort().pop())}` : 'No te quedan cuotas')}
+      ${resPer.map(x => fila(`Resumen ${esc(x.r.marca)} <span class="tag ${x.pagado ? 'ok' : 'bad'}">${x.pagado ? '✓ pagado' : 'a pagar'}</span>`, `<span class="${x.pagado ? 'pos' : 'neg'}">${m(x.tuyo)}</span>`, `vence ${fmtDM(x.r.vence)} · ${m(x.r.total)}${x.r.totalUSD ? ` + ${fmtMon(x.r.totalUSD, 'USD')} al oficial` : ''}${x.neg > 0 ? ` · − ${m(x.neg)} del negocio` : ''}`)).join('') || fila('Resúmenes del período', '—', 'Cargá el PDF del resumen con 📎 para ver el detalle')}
+      ${fila('Tarjetas este mes (tu parte)', topeT > 0 ? `<span class="${tj > topeT ? 'neg' : ''}">${m(tj)}</span> <span class="small muted">de ${m(topeT)}</span>` : m(tj), topeT > 0 ? (tj > topeT ? `<span class="neg">Te pasaste ${m(tj - topeT)} del tope</span>` : `Te quedan ${m(topeT - tj)} del tope`) : 'Poné un tope en Más → Ajustes')}
+      ${fila('Cuotas del período', m(fila0.total), (cuotasMes.map(x => `${esc(x.desc)} ${x.n}/${x.N}${x.negocio ? ' 🏢' : ''}`).join(' · ') || 'Sin cuotas en el período') + (fila0.negocio > 0 ? ` · 🏢 el negocio paga ${m(fila0.negocio)}` : ''))}
+      ${fila('Cuotas que quedan (tuyas)', m(cuotasRestTotal), rest.length ? `${rest.length} mes(es) más · la última en ${fmtMesCorto(rest[rest.length - 1].ym)} · <button class="linkbtn" data-tab="cuotas">ver mes a mes</button>` : 'No te quedan cuotas')}
+      ${comprasNuevas.length ? fila('Compras nuevas con tarjeta', m(sum(comprasNuevas, g => toARS(g.monto, g.moneda))), `desde el cierre del ${fmtDM(ultCierre)} · van al próximo resumen`) : ''}
       </div>${topeT > 0 ? barra(tj / topeT * 100, tj > topeT ? 'bad' : tj >= topeT * 0.8 ? 'warn' : 'ok') : ''}</div>
 
     <div class="card"><h2>🏦 Tus cuentas en pesos<span class="sp"></span><button class="btn sm" data-nueva-inv="liquidez">+ Cuenta</button></h2>
