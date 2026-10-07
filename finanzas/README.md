@@ -229,3 +229,10 @@ Al cargar un recibo, las **horas extras** se separan del sueldo como ingreso var
   - **Resumen de tarjeta**: total a pagar, vencimiento, pago mínimo y cierre. Actualiza el pago del plan ("Resumen Visa/Mastercard") o crea un pago pendiente.
   - **Ticket o factura**: comercio, total, fecha y categoría (los de supermercado se descuentan del presupuesto de comida); abre el gasto completo para confirmar.
 
+
+## Resúmenes de tarjeta: desglose y cuotas mes a mes
+
+- Al cargar el PDF del resumen (Visa o Mastercard del Galicia) la app guarda en el celular el detalle de cada consumo: cuotas (n de N), compras en 1 pago, consumos en dólares e impuestos y cargos.
+- **Gastos → 💳 Resumen Visa / Mastercard**: total a pagar (rojo si falta pagar, verde si ya está pagado), vencimiento, mínimo y cada grupo con su detalle. Los comercios del negocio se marcan con 🏢.
+- **Cuotas → 📅 Cuotas mes a mes**: los próximos 12 meses con columnas Visa, Master, Otras (las de la hoja Cuotas) y Total. Tocá un mes para ver qué cuota se paga y cuáles terminan. Se calcula con el último resumen de cada tarjeta (cuota n/N → los meses siguientes hasta N).
+- Los resúmenes ya cargados antes se vuelven a leer solos al abrir Gastos o Cuotas. Un enlace `#importar=` también puede traer `resumenes`.

@@ -345,7 +345,7 @@ const LS = {
 /** Versión mínima del script de Google que necesita esta app (ver apps-script/Code.gs). */
 const VERSION_SCRIPT_MIN = 5;
 /** Versión visible de la app (se ve en Más). Cambiarla junto con VERSION en sw.js. */
-const APP_VERSION = '2026-10-07.6';
+const APP_VERSION = '2026-10-07.7';
 const HOJAS = ['Ingresos', 'Gastos', 'Cuotas', 'Inversiones', 'Vencimientos', 'Objetivos', 'Historial'];
 const NUMERICOS = ['monto', 'montoCuota', 'cuotasTotales', 'cantidad', 'precioCompra', 'tcCompra', 'meta', 'saldoInicial', 'patrimonioARS', 'patrimonioUSD', 'dolar'];
 const TARJETAS = ['visa', 'mastercard'];
@@ -1439,6 +1439,51 @@ function analizarRecibo(lineas) {
 }
 
 /* ----- Resumen de tarjeta ----- */
+/** Renglones de consumo del resumen (PDF): fecha al principio, cuota "nn/nn", pesos (x 400–520) y dólares (x ≥ 520). */
+function consumosResumen(lineas) {
+  const out = [], imp = i => /^-?\d{1,3}(\.\d{3})*,\d{2}$/.test(i.s);
+  const negocio = (S.cfg.comerciosNegocio || []).map(normTexto).filter(Boolean);
+  for (const l of lineas) {
+    const t = l.texto.trim();
+    if (!/^\d{1,2}[-\/](\d{2}|[A-Za-z]{3})[-\/]\d{2}\b/.test(t) || (t.match(/\d{1,2}-[A-Za-z]{3}-\d{2}/g) || []).length >= 3) continue;
+    if (!l.items.some(i => (i.x || 0) >= 400)) continue; // sin columnas (foto): no se puede separar
+    const ars = l.items.filter(i => imp(i) && i.x >= 400 && i.x < 520).map(i => parseImporte(i.s)).pop() || 0;
+    const usd = l.items.filter(i => imp(i) && i.x >= 520).map(i => parseImporte(i.s)).pop() || 0;
+    if (!ars && !usd) continue;
+    const cuota = (l.items.find(i => /^\d{2}\/\d{2}$/.test(i.s)) || {}).s || '';
+    const [n, N] = cuota ? cuota.split('/').map(Number) : [1, 1];
+    const d0 = (l.items.slice(1).find(i => i.x < 150 && !/^[*K]$/.test(i.s)) || {}).s || '';
+    const desc = d0.replace(/^(MERPAGO|EPAGOS|PAGOS360|PAYU)\s*\*\s*(AR\*)?/i, '').replace(/\(.*$/, '').replace(/\d{6,}.*$/, '').replace(/[\s(,*-]+$/, '').trim() || 'Consumo';
+    const nd = normTexto(d0);
+    const tipo = /su pago/.test(nd) ? 'pago' : /(imp\.|impuesto|iibb|percep|\biva\b|db\.?\s?rg|rg \d|sellos|mant cta|comision|interes|cargo)/.test(nd) ? 'impuesto' : usd && !ars ? 'usd' : N > 1 ? 'cuota' : 'compra';
+    if (tipo === 'pago') continue;
+    out.push({ fecha: buscarFecha(t), desc, cuota, n, N, ars, usd, tipo, negocio: negocio.some(k => nd.includes(k)) });
+  }
+  return out;
+}
+/** Detalle de los resúmenes leídos (se guarda en este dispositivo; los últimos 24). */
+const resumenesGuardados = () => LS.get('resumenes', []);
+function guardarResumen(r) {
+  if (!r || !TARJETAS.includes(r.medio) || !r.cierre || !Array.isArray(r.items)) return;
+  const todos = resumenesGuardados().filter(x => !(x.medio === r.medio && x.cierre === r.cierre)).concat([r]).sort((a, b) => (a.cierre < b.cierre ? 1 : -1));
+  LS.set('resumenes', todos.slice(0, 24));
+}
+/** Último resumen de la tarjeta (opcional: que venza hasta el mes ym). */
+const ultimoResumen = (medio, ym) => resumenesGuardados().find(r => r.medio === medio && (!ym || (r.vence || r.cierre).slice(0, 7) <= ym));
+/** Si los resúmenes ya se habían cargado en el celular antes de esta versión, se vuelven a leer (una vez). */
+let _recuperando = false;
+async function recuperarResumenes() {
+  if (_recuperando || TARJETAS.every(m => ultimoResumen(m))) return;
+  _recuperando = true;
+  let todos = []; try { todos = await IDB.todos(); } catch (e) { return; }
+  const pdfs = todos.filter(c => c.tipo === 'application/pdf' && /^Resumen/.test(c.resumen || ''));
+  let n = 0;
+  for (const c of pdfs) {
+    try { const r = analizarResumen(await leerPDF(c.blob)); if (r && r.resumen) { guardarResumen(r.resumen); n++; } } catch (e) { /* sin conexión: se intenta otra vez otro día */ _recuperando = false; return; }
+  }
+  if (n) renderTodo();
+}
+
 function analizarResumen(lineas) {
   const txt = lineas.map(l => l.texto).join('\n'), n = normTexto(txt);
   if (!/(resumen|estado de cuenta|liquidacion)/.test(n) || !/(vencimiento|vto)/.test(n) || !/(visa|master|american express|amex|cabal|naranja)/.test(n)) return null;
@@ -1503,7 +1548,9 @@ function analizarResumen(lineas) {
     props.push({ hoja: 'Gastos', etiqueta: 'El negocio te debe', row: { id: `neg-${kw.replace(/\W+/g, '')}-${(m0.cuota || '').replace('/', 'de')}-${(cierre || hoy()).slice(0, 7)}`, fecha: cierre || hoy(), categoria: 'Negocio', descripcion: `${m0.desc}${m0.cuota ? ` (cuota ${m0.cuota})` : ''}`, monto: neto, moneda: 'ARS', medio, ambito: 'negocio', fijo: 'no', devuelto: 'no' } });
   }
   const debito = /debitaremos/.test(n);
-  return { tipo: 'resumen', titulo: concepto, props, detalle: [
+  const items = consumosResumen(lineas);
+  const resumen = items.length && (cierre || vence) ? { medio, marca, cierre: cierre || vence, vence: vence || cierre, proxCierre, proxVence, total, totalUSD: totalUSD > 0 ? totalUSD : 0, minimo: isFinite(minimo) ? minimo : null, cuotasVencer, items } : null;
+  return { tipo: 'resumen', titulo: concepto, props, resumen, detalle: [
     `Total a pagar: <b>${fmtMon(total, 'ARS')}</b>${totalUSD > 0 ? ` + <b>${fmtMon(totalUSD, 'USD')}</b>` : ''}`,
     vence ? `Vence: <b>${fmtFecha(vence)}</b>${debito ? ' · se debita solo de tu caja de ahorro' : ''}` : 'No encontré el vencimiento',
     isFinite(minimo) ? `Pago mínimo: ${fmtMon(minimo, 'ARS')}` : '', cierre ? `Cierre: ${fmtFecha(cierre)}${proxVence ? ` · próximo cierre ${fmtFecha(proxCierre)}, vence ${fmtFecha(proxVence)}` : ''}` : '',
@@ -1548,6 +1595,7 @@ async function analizarComprobante(blob, tipo, comp) {
       aviso('Leyendo el PDF…');
       const lineas = await leerPDF(blob);
       r = analizarRecibo(lineas) || analizarResumen(lineas) || ticketAPropuesta(analizarTicket(lineas.map(l => l.texto).join('\n')));
+      if (r.resumen) guardarResumen(r.resumen);
     } else {
       const texto = await leerFoto(blob, aviso);
       const lineasFoto = texto.split(/\n+/).map(s => ({ texto: s, items: s.split(/\s+/).map(x => ({ s: x, x: 0 })) }));
@@ -2110,30 +2158,94 @@ function renderGastos() {
     <div class="card"><h2>Gasto personal del mes<span class="sp"></span>${pill(nv)}</h2><div class="big num">${fmtV(total + cuotasMes)}</div>
       <div class="small muted">Compras ${fmtV(total)} · cuotas ${fmtV(cuotasMes)} · fijos ${fmtV(fijos)}${presu ? ` · presupuesto ${fmtV(presu)} (${fmtPct(pct, 0)})` : ''}</div>${presu ? barra(pct, nv) : ''}
       ${porMedio.length ? `<div class="legend">${porMedio.map(([m, v]) => `<span><span class="tag">${MEDIOS[m]}</span>${fmtV(v)}</span>`).join('')}</div>` : ''}</div>
+    ${cardDesgloseTarjetas(ym)}
     <div class="card"><h2>Movimientos</h2><div class="list">${items.map(g => `<button class="item" data-edit="Gastos" data-id="${esc(g.id)}"><div class="main"><div class="t">${g.comprobante ? '📎 ' : ''}${esc(g.descripcion)}</div><div class="s">${fmtFecha(g.fecha)} · <span class="tag">${esc(g.categoria)}</span><span class="tag">${MEDIOS[g.medio] || ''}</span>${g.ambito === 'negocio' ? `<span class="tag">Negocio${g.devuelto === 'si' ? ' · devuelto' : ''}</span>` : ''}${g.fijo === 'si' ? '<span class="tag">Fijo</span>' : ''}</div></div><div class="r"><div class="a num">${fmtMon(+g.monto, g.moneda)}</div></div></button>`).join('') || empty('Sin gastos este mes. Tocá + para cargar uno.')}</div></div>
     ${cardComprobantes()}
     <p class="small muted">Las compras en cuotas se cargan en la pestaña Cuotas.</p>`;
   renderComprobantes();
+  recuperarResumenes();
 }
 
 /* =====================================================================
    18. PESTAÑA CUOTAS
    ===================================================================== */
+/** Proyección mes a mes de las cuotas: Visa y Mastercard (del último resumen) + las cargadas a mano en la hoja Cuotas. */
+function proyeccionCuotas(nMeses = 12) {
+  const filas = Array.from({ length: nMeses }, (_, k) => ({ ym: addMonths(mesActual(), k), visa: [], mastercard: [], otras: [] }));
+  const idx = new Map(filas.map(f => [f.ym, f]));
+  const mesResumen = {};
+  for (const medio of TARJETAS) {
+    const r = ultimoResumen(medio); if (!r) continue;
+    const ym0 = (r.vence || r.cierre).slice(0, 7); mesResumen[medio] = ym0;
+    // cuota n/N en el resumen que vence en ym0 → n+1 vence el mes siguiente, y así hasta N
+    for (const it of r.items.filter(i => i.tipo === 'cuota')) for (let k = 0; k <= it.N - it.n; k++) {
+      const f = idx.get(addMonths(ym0, k)); if (f) f[medio].push({ desc: it.desc, n: it.n + k, N: it.N, ars: it.ars, negocio: it.negocio, fecha: it.fecha });
+    }
+  }
+  for (const i of cuotasIndividuales()) {
+    const f = idx.get(i.ym); if (!f) continue;
+    const col = TARJETAS.includes(i.c.medio) ? i.c.medio : 'otras';
+    if (col !== 'otras' && mesResumen[col] && i.ym <= mesResumen[col]) continue; // ese mes ya lo dice el resumen
+    if (col !== 'otras' && f[col].some(x => Math.abs(x.ars - i.ars) <= Math.max(1, i.ars * 0.01))) continue; // ya está en el resumen
+    f[col].push({ desc: i.c.descripcion, n: i.n, N: i.N, ars: i.ars, negocio: i.c.ambito === 'negocio', id: i.c.id, medio: i.c.medio });
+  }
+  for (const f of filas) { f.tVisa = sum(f.visa, x => x.ars); f.tMaster = sum(f.mastercard, x => x.ars); f.tOtras = sum(f.otras, x => x.ars); f.total = f.tVisa + f.tMaster + f.tOtras; }
+  return { filas, mesResumen };
+}
+const fmtCorto = v => (Math.abs(v) >= 1e6 ? fmtNum(v / 1e6, 2) + ' M' : Math.abs(v) >= 1e3 ? fmtNum(v / 1e3, 0) + ' mil' : fmtNum(v, 0));
+const itemCuota = x => `<div class="item"><div class="main"><div class="t">${esc(x.desc)}</div><div class="s">cuota ${x.n} de ${x.N}${x.n === x.N ? ' · <span class="pos">última</span>' : ` · quedan ${x.N - x.n}`}${x.negocio ? ' · 🏢 negocio' : ''}${x.medio && !TARJETAS.includes(x.medio) ? ` · ${MEDIOS[x.medio] || esc(x.medio)}` : ''}</div></div><div class="r"><div class="a num neg">${fmtMon(x.ars, 'ARS')}</div></div></div>`;
+function cardProyeccion() {
+  const { filas, mesResumen } = proyeccionCuotas(12);
+  const conDatos = filas.filter(f => f.total > 0);
+  const hayRes = Object.keys(mesResumen).length;
+  const maxV = Math.max(...filas.map(f => f.total), 1);
+  const col = (v, k) => `<td class="n num ${v ? '' : 'muted'}">${v ? fmtCorto(v) : '—'}</td>`;
+  const termina = (f, k) => { const sig = filas[k + 1]; if (!sig) return []; return [...f.visa, ...f.mastercard, ...f.otras].filter(x => x.n === x.N); };
+  return `<div class="card"><h2>📅 Cuotas mes a mes<span class="sp"></span><span class="small muted">lo que pagás cada mes</span></h2>
+    ${hayRes ? '' : '<p class="small muted" style="margin:-4px 0 8px">Para ver Visa y Mastercard en detalle, cargá el PDF del resumen con 📎 en Gastos.</p>'}
+    <table class="t"><thead><tr><th>Mes</th><th class="n">Visa</th><th class="n">Master</th><th class="n">Otras</th><th class="n">Total</th></tr></thead><tbody>
+    ${filas.map(f => `<tr><td>${fmtMesCorto(f.ym)}<div class="bar"><span style="width:${f.total / maxV * 100}%"></span></div></td>${col(f.tVisa)}${col(f.tMaster)}${col(f.tOtras)}<td class="n num ${f.total ? 'neg' : 'muted'}"><b>${f.total ? fmtCorto(f.total) : '—'}</b></td></tr>`).join('')}
+    </tbody></table>
+    <p class="small muted" style="margin:6px 0 0">Total 12 meses: <b class="num neg">${fmtMon(sum(filas, f => f.total), 'ARS')}</b>${hayRes ? ` · según el último resumen de ${Object.keys(mesResumen).map(m => MEDIOS[m]).join(' y ')}` : ''}. Tocá un mes para ver el detalle.</p></div>
+  ${conDatos.length ? `<div class="card"><h2>Detalle por mes</h2>${filas.map((f, k) => { if (!f.total) return ''; const fin = termina(f, k); return `<details ${k === 0 ? 'open' : ''} style="border-top:1px solid var(--line);padding:8px 0"><summary style="cursor:pointer;display:flex;gap:8px;align-items:center"><b>${fmtMes(f.ym)}</b><span class="sp" style="flex:1"></span><b class="num neg">${fmtMon(f.total, 'ARS')}</b></summary>
+      ${[['visa', '💳 Visa', f.tVisa], ['mastercard', '💳 Mastercard', f.tMaster], ['otras', '🧾 Otras cuotas', f.tOtras]].filter(([m]) => f[m].length).map(([m, tit, t]) => `<div class="small" style="display:flex;margin:10px 0 2px"><b>${tit}</b><span style="flex:1"></span><b class="num">${fmtMon(t, 'ARS')}</b></div><div class="list">${f[m].sort((a, b) => b.ars - a.ars).map(itemCuota).join('')}</div>`).join('')}
+      ${fin.length && filas[k + 1] ? `<p class="small pos" style="margin:8px 0 0">✓ Desde ${fmtMes(filas[k + 1].ym).toLowerCase()} se liberan ${fmtMon(sum(fin, x => x.ars), 'ARS')} (${fin.map(x => esc(x.desc)).join(', ')}).</p>` : ''}</details>`; }).join('')}</div>` : ''}`;
+}
+
+/* ---------- Desglose del resumen de cada tarjeta (pestaña Gastos) ---------- */
+function cardDesgloseTarjetas(ym) {
+  const res = TARJETAS.map(m => ultimoResumen(m, ym) || ultimoResumen(m)).filter(Boolean);
+  if (!res.length) return `<div class="card"><h2>💳 Desglose de tarjetas</h2><p class="small muted" style="margin:0">Cargá el PDF del resumen de la Visa o la Mastercard con "📎 Resumen o archivo" y acá ves en qué se fue cada peso.</p></div>`;
+  return res.map(r => {
+    const it = r.items, g = t => it.filter(i => i.tipo === t);
+    const cuotas = g('cuota'), compras = g('compra'), usd = g('usd'), imps = g('impuesto');
+    const tCuotas = sum(cuotas, i => i.ars), tCompras = sum(compras, i => i.ars);
+    const tImp = r.total - tCuotas - tCompras - sum(usd, i => i.ars); // impuestos y cargos = lo que falta para llegar al total
+    const venc = S.data.Vencimientos.find(v => v.origen !== 'omitido' && /^Resumen/.test(v.concepto || '') && normTexto(v.concepto).includes(normTexto(r.marca)) && !/dolares/.test(normTexto(v.concepto)) && (v.fecha || '').slice(0, 7) === (r.vence || '').slice(0, 7));
+    const pagado = venc && venc.estado === 'pagado';
+    const linea = i => `<div class="item"><div class="main"><div class="t">${esc(i.desc)}${i.negocio ? ' <span class="tag">🏢 negocio</span>' : ''}</div><div class="s">${i.fecha ? fmtFecha(i.fecha) : ''}${i.tipo === 'cuota' ? ` · cuota ${i.n} de ${i.N}${i.n === i.N ? ' (última)' : ` · quedan ${i.N - i.n}`}` : ''}</div></div><div class="r"><div class="a num ${i.ars < 0 ? 'pos' : ''}">${i.usd && !i.ars ? fmtMon(i.usd, 'USD') : fmtMon(i.ars, 'ARS')}</div></div></div>`;
+    const grupo = (tit, lista, total, extra = '', abierto = false) => lista.length ? `<details ${abierto ? 'open' : ''} style="border-top:1px solid var(--line);padding:8px 0"><summary style="cursor:pointer;display:flex;gap:8px;align-items:center"><span>${tit}</span><span style="flex:1"></span><b class="num">${total}</b></summary>${extra}<div class="list">${lista.map(linea).join('')}</div></details>` : '';
+    return `<div class="card"><h2>💳 Resumen ${esc(r.marca)}<span class="sp"></span><span class="tag ${pagado ? 'ok' : 'bad'}">${pagado ? '✓ pagado' : 'a pagar'}</span></h2>
+      <div class="big num ${pagado ? 'pos' : 'neg'}">${fmtMon(r.total, 'ARS')}</div>${r.totalUSD ? `<div class="mid num ${pagado ? 'pos' : 'neg'}">+ ${fmtMon(r.totalUSD, 'USD')}</div>` : ''}
+      <div class="small muted">Vence ${fmtFecha(r.vence)} · cerró ${fmtFecha(r.cierre)}${r.minimo ? ` · mínimo ${fmtMon(r.minimo, 'ARS')}` : ''}${r.proxVence ? ` · el próximo cierra ${fmtFecha(r.proxCierre)} y vence ${fmtFecha(r.proxVence)}` : ''}</div>
+      <div class="legend" style="margin:10px 0 4px">${tCuotas ? `<span><span class="tag">Cuotas</span>${fmtMon(tCuotas, 'ARS')}</span>` : ''}${tCompras ? `<span><span class="tag">En 1 pago</span>${fmtMon(tCompras, 'ARS')}</span>` : ''}${Math.round(tImp) ? `<span><span class="tag">Impuestos y cargos</span>${fmtMon(tImp, 'ARS')}</span>` : ''}${usd.length ? `<span><span class="tag">En dólares</span>${fmtMon(sum(usd, i => i.usd), 'USD')}</span>` : ''}</div>
+      ${grupo(`🔁 Cuotas (${cuotas.length})`, cuotas.sort((a, b) => b.ars - a.ars), fmtMon(tCuotas, 'ARS'), '', true)}
+      ${grupo(`🛒 Compras en 1 pago (${compras.length})`, compras.sort((a, b) => b.ars - a.ars), fmtMon(tCompras, 'ARS'))}
+      ${grupo(`💵 En dólares (${usd.length})`, usd, fmtMon(sum(usd, i => i.usd), 'USD'), '<p class="small muted" style="margin:6px 0">Se pagan aparte, en dólares.</p>')}
+      ${Math.round(tImp) ? grupo('🧾 Impuestos y cargos', Math.abs(tImp - sum(imps, i => i.ars)) > 1 ? [...imps, { desc: 'Otros ajustes del banco', ars: tImp - sum(imps, i => i.ars) }] : imps, fmtMon(tImp, 'ARS'), '<p class="small muted" style="margin:6px 0">Percepciones, IVA, sellos y comisiones (incluye devoluciones).</p>') : ''}
+      <p class="small muted" style="margin:8px 0 0"><button class="linkbtn" data-tab="cuotas">Ver cómo siguen las cuotas mes a mes →</button></p></div>`;
+  }).join('');
+}
+
 function renderCuotas() {
   const lista = S.data.Cuotas.map(c => ({ c, i: infoCuota(c) })).sort((a, b) => (a.i.fin < b.i.fin ? -1 : 1));
   const activas = lista.filter(x => x.i.activa), terminadas = lista.filter(x => !x.i.activa);
-  const ind = cuotasIndividuales();
-  const meses = Array.from({ length: 6 }, (_, k) => addMonths(mesActual(), k));
-  const comp = meses.map(ym => ({ ym, v: sum(ind.filter(i => i.ym === ym), i => i.ars), libera: sum(activas.filter(x => x.i.fin === addMonths(ym, -1)), x => x.i.montoARS) }));
-  const maxV = Math.max(...comp.map(c => c.v), 1);
   const fila = ({ c, i }) => { const pct = i.N ? i.actual / i.N * 100 : 0; const nv = !i.activa ? 'ok' : i.restantes <= 1 ? 'ok' : 'warn'; return `<button class="item" data-edit="Cuotas" data-id="${esc(c.id)}"><div class="main"><div class="t">${esc(c.descripcion)}</div><div class="s">${MEDIOS[c.medio] || c.medio} · cuota ${i.actual} de ${i.N} · termina ${fmtMesCorto(i.fin)}${c.ambito === 'negocio' ? ' · negocio' : ''}</div>${barra(pct, 'ok')}<div class="s">${i.activa ? `Se liberan ${fmtMon(+c.montoCuota, c.moneda)} desde ${fmtMesCorto(i.libera)}` : 'Terminada'}</div></div><div class="r"><div class="a num">${fmtMon(+c.montoCuota, c.moneda)}</div><div class="s">por mes</div>${pill(nv)}</div></button>`; };
   $('#v-cuotas').innerHTML = `
-    <div class="card"><h2>Compromiso próximos 6 meses</h2>
-      <table class="t"><thead><tr><th>Mes</th><th class="n">Cuotas</th><th class="n">Se libera</th></tr></thead><tbody>
-      ${comp.map(c => `<tr><td>${fmtMesCorto(c.ym)}<div class="bar"><span style="width:${c.v / maxV * 100}%"></span></div></td><td class="n num">${fmtV(c.v)}</td><td class="n num ${c.libera ? 'pos' : ''}">${c.libera ? '+' + fmtV(c.libera) : '—'}</td></tr>`).join('')}
-      </tbody></table><div class="small muted" style="margin-top:6px">Total 6 meses: <b class="num">${fmtV(sum(comp, c => c.v))}</b></div></div>
-    <div class="card"><h2>Activas (${activas.length})</h2><div class="list">${activas.map(fila).join('') || empty('No tenés cuotas activas.')}</div></div>
+    ${cardProyeccion()}
+    <div class="card"><h2>Cargadas a mano (${activas.length})</h2><div class="list">${activas.map(fila).join('') || empty('No tenés cuotas activas.')}</div></div>
     ${terminadas.length ? `<details class="card"><summary>Terminadas (${terminadas.length})</summary><div class="list">${terminadas.map(fila).join('')}</div></details>` : ''}`;
+  recuperarResumenes();
 }
 
 /* =====================================================================
@@ -2778,8 +2890,10 @@ async function importarDesdeEnlace() {
     const cfgOk = ['presupuesto', 'topeTarjetas', 'mesesObjetivo', 'diaCobro', 'cobroHabil'];
     const cfgNuevo = datos.cfg && typeof datos.cfg === 'object' ? Object.fromEntries(Object.entries(datos.cfg).filter(([k, v]) => cfgOk.includes(k) && isFinite(+v) && +v >= 0).map(([k, v]) => [k, +v])) : {};
     if (datos.cfg && Array.isArray(datos.cfg.comerciosNegocio)) cfgNuevo.comerciosNegocio = [...new Set([...(S.cfg.comerciosNegocio || []), ...datos.cfg.comerciosNegocio.map(x => String(x).slice(0, 40)).filter(Boolean)])];
-    if (!hojas.length && !Object.keys(cfgNuevo).length && !aBorrar.length) throw new Error('El enlace no tiene datos para importar.');
-    const resumen = [...hojas.map(h => `${datos[h].rows.length} ${h.toLowerCase()}`), ...(Object.keys(cfgNuevo).length ? ['tus ajustes'] : []), ...(aBorrar.length ? [`se borran: ${aBorrar.map(([, , r]) => `"${r.concepto || r.descripcion || r.activo}"`).join(', ')}`] : [])].join(' y ');
+    // Detalle de resúmenes de tarjeta (consumos, cuotas, impuestos)
+    const resTarj = (Array.isArray(datos.resumenes) ? datos.resumenes : []).filter(r => r && TARJETAS.includes(r.medio) && /^\d{4}-\d{2}-\d{2}$/.test(r.cierre || '') && Array.isArray(r.items) && isFinite(+r.total));
+    if (!hojas.length && !Object.keys(cfgNuevo).length && !aBorrar.length && !resTarj.length) throw new Error('El enlace no tiene datos para importar.');
+    const resumen = [...hojas.map(h => `${datos[h].rows.length} ${h.toLowerCase()}`), ...(resTarj.length ? [`el detalle de ${resTarj.length} resumen(es) de tarjeta`] : []), ...(Object.keys(cfgNuevo).length ? ['tus ajustes'] : []), ...(aBorrar.length ? [`se borran: ${aBorrar.map(([, , r]) => `"${r.concepto || r.descripcion || r.activo}"`).join(', ')}`] : [])].join(' y ');
     if (!confirm(`Se van a cargar ${resumen}. Si ya estaban cargados, se actualizan sin duplicarse. ¿Continuar?`)) return;
     const ahora = new Date().toISOString();
     for (const h of hojas) {
@@ -2799,6 +2913,7 @@ async function importarDesdeEnlace() {
     }
     for (const [h, id] of aBorrar) { registrarCambio(h, S.data[h].find(r => r.id === id), null); borrarLocal(h, id); encolar({ op: 'delete', hoja: h, id }); }
     if (Object.keys(cfgNuevo).length) { Object.assign(S.cfg, cfgNuevo); guardarCfg(); }
+    resTarj.forEach(guardarResumen);
     guardarDatos();
     toast(`Listo: ${resumen}. ${S.cfg.scriptUrl ? 'Se está guardando en tu planilla; puede tardar unos minutos.' : 'Configurá la URL del script para guardarlo en tu planilla.'}`, 'ok', 9000);
   } catch (e) {
