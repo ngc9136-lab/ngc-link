@@ -345,7 +345,7 @@ const LS = {
 /** Versión mínima del script de Google que necesita esta app (ver apps-script/Code.gs). */
 const VERSION_SCRIPT_MIN = 5;
 /** Versión visible de la app (se ve en Más). Cambiarla junto con VERSION en sw.js. */
-const APP_VERSION = '2026-10-08.1';
+const APP_VERSION = '2026-10-10.1';
 const HOJAS = ['Ingresos', 'Gastos', 'Cuotas', 'Inversiones', 'Vencimientos', 'Objetivos', 'Historial'];
 const NUMERICOS = ['monto', 'montoCuota', 'cuotasTotales', 'cantidad', 'precioCompra', 'tcCompra', 'meta', 'saldoInicial', 'patrimonioARS', 'patrimonioUSD', 'dolar'];
 const TARJETAS = ['visa', 'mastercard'];
@@ -768,7 +768,7 @@ async function sincronizar({ silencioso = false } = {}) {
     S.lastSync = new Date().toISOString(); LS.set('lastSync', S.lastSync); LS.set('quotes', S.quotes);
     guardarDatos();
     setSync(S.queue.length ? 'pending' : 'ok');
-    renderTodo();
+    renderFondo();
   } catch (e) {
     setSync('error', e.message);
     if (!silencioso) toast(e.message, 'bad');
@@ -871,7 +871,7 @@ async function actualizarCotizaciones({ manual = false } = {}) {
   if (fallas.length && manual) toast('Algunas cotizaciones no se actualizaron y se muestran las últimas guardadas: ' + fallas.join(' · '), 'warn');
   fotoPatrimonio();
   registrarPreciosDelDia();
-  renderTodo();
+  renderFondo();
 }
 /** Guarda el precio del día (en US$) de cada activo que tenés, para armar gráficos de precio en el tiempo. */
 function registrarPreciosDelDia() {
@@ -1046,6 +1046,12 @@ function renderHeader() {
   $('#btn-vista').textContent = S.cfg.vista;
   $('#sel-dolar').value = S.cfg.dolarTipo;
 }
+/** Lo que se actualiza solo (sincronización, cotizaciones) no redibuja la pantalla mientras escribís en un campo:
+ *  si no, el campo desaparece y se cierra el teclado. Se redibuja cuando terminás de escribir. */
+let _renderPend = false;
+const escribiendo = () => { const a = document.activeElement; return !!a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && !!a.closest('section.view'); };
+function renderFondo() { if (escribiendo()) { _renderPend = true; return; } renderTodo(); }
+document.addEventListener('focusout', () => setTimeout(() => { if (_renderPend && !escribiendo()) { _renderPend = false; renderTodo(); } }, 400));
 function renderTodo() {
   renderHeader(); renderSync(); renderNav();
   const r = { mes: renderMes, resumen: renderResumen, ingresos: renderIngresos, gastos: renderGastos, cuotas: renderCuotas, inversiones: renderInversiones, vencimientos: renderVencimientos, objetivos: renderObjetivos, ajustes: renderAjustes, mas: renderMas }[S.ui.tab];
@@ -1524,7 +1530,7 @@ async function recuperarResumenes() {
   for (const c of pdfs) {
     try { const r = analizarResumen(await leerPDF(c.blob)); if (r && r.resumen) { guardarResumen(r.resumen); n++; } } catch (e) { /* sin conexión: se intenta otra vez otro día */ _recuperando = false; return; }
   }
-  if (n) renderTodo();
+  if (n) renderFondo();
 }
 
 function analizarResumen(lineas) {
@@ -2817,7 +2823,7 @@ function enviarForm() {
    24. EVENTOS
    ===================================================================== */
 document.addEventListener('click', e => {
-  const t = e.target.closest('button, [data-tab]'); if (!t) return;
+  const t = e.target.closest('button, [data-tab]'); if (!t || t === document.body) return; // el body lleva data-tab (para el diseño): no es un botón
   const ds = t.dataset;
   if (ds.tab) { if (ds.vgIr) S.ui.vistaGastos = ds.vgIr; return irA(ds.tab); }
   if (ds.periodo) { S.ui.periodo = ds.periodo; return renderTodo(); }
