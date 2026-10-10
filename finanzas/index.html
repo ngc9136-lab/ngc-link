@@ -345,7 +345,7 @@ const LS = {
 /** Versión mínima del script de Google que necesita esta app (ver apps-script/Code.gs). */
 const VERSION_SCRIPT_MIN = 5;
 /** Versión visible de la app (se ve en Más). Cambiarla junto con VERSION en sw.js. */
-const APP_VERSION = '2026-10-10.1';
+const APP_VERSION = '2026-10-10.2';
 const HOJAS = ['Ingresos', 'Gastos', 'Cuotas', 'Inversiones', 'Vencimientos', 'Objetivos', 'Historial'];
 const NUMERICOS = ['monto', 'montoCuota', 'cuotasTotales', 'cantidad', 'precioCompra', 'tcCompra', 'meta', 'saldoInicial', 'patrimonioARS', 'patrimonioUSD', 'dolar'];
 const TARJETAS = ['visa', 'mastercard'];
@@ -1214,7 +1214,13 @@ function planDePagos() {
   const gastosMes = S.data.Gastos.filter(g => g.ambito !== 'negocio' && enCiclo(g.fecha, c));
   const omitidos = refsOmitidas(c);
   return S.data.Vencimientos.filter(v => v.origen === 'plantilla' && !omitidos.has('plan:' + v.id)).map(v => {
-    const k = normTexto(v.concepto), plan = toARS(+v.monto || 0, v.moneda || 'ARS');
+    const k = normTexto(v.concepto); let plan = toARS(+v.monto || 0, v.moneda || 'ARS');
+    // Presupuesto en dólares (comida): se fija en pesos al dólar del primer día del período, así no cambia todos los días
+    if (v.moneda === 'USD' && plan > 0) {
+      const clave = `${c.key}|${v.id}|${v.monto}`, fijos = LS.get('planFijo', {});
+      if (fijos[clave] > 0) plan = fijos[clave];
+      else { fijos[clave] = Math.round(plan); for (const x of Object.keys(fijos)) if (!x.startsWith(c.key + '|')) delete fijos[x]; LS.set('planFijo', fijos); }
+    }
     const pagado = sum(gastosMes.filter(g => coincidePlan(g, k)), g => toARS(g.monto, g.moneda));
     return { v, k, plan, pagado, falta: Math.max(0, plan - pagado), fecha: fechaEnCiclo(c, +String(v.fecha || '').slice(8, 10) || 10) };
   }).sort((a, b) => (a.fecha < b.fecha ? -1 : 1));
