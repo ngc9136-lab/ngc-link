@@ -152,7 +152,19 @@ section.view{display:none} section.view.on{display:block}
 .comp-bar .btn{min-height:48px;font-size:15px;padding:0 8px}
 .comp-prev{margin-bottom:12px;text-align:center}
 .comp-prev img{max-width:100%;max-height:260px;border-radius:12px;border:1px solid var(--line);display:block;margin:0 auto 6px}
-.mes-grid{display:grid;gap:0 16px}
+.mes-grid{display:grid;gap:0 16px;grid-template-columns:minmax(0,1fr)}
+.mes-col{min-width:0}
+.hero{border:2px solid var(--ok)}.hero.bad{border-color:var(--bad)}
+.hero .res{font-size:clamp(26px,8.5vw,40px);font-weight:800;line-height:1.1;margin:2px 0 10px}
+.hero .row3 .v{font-size:clamp(13px,3.8vw,18px)}
+.pend-it{padding:10px 2px;border-bottom:1px solid var(--line)}
+.pend-main{display:flex;justify-content:space-between;align-items:baseline;gap:10px;width:100%;text-align:left;background:none;border:0;color:var(--txt);padding:0;font:inherit;cursor:pointer}
+.pend-main .pt{font-weight:600;min-width:0;overflow-wrap:anywhere}
+.pend-main .pa{font-weight:800;white-space:nowrap;font-size:17px}
+.pend-sub{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap}
+.pend-sub .s{font-size:13px;color:var(--txt2);min-width:0;flex:1 1 140px}
+.pend-sub .acc-pend{margin-top:0}
+.pend-sub .acc-pend .btn{min-height:36px;padding:0 10px;font-size:14px}
 .row3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:10px}
 .row3 .v{font-size:clamp(14px,4.2vw,20px);white-space:nowrap}
 .comida-form{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -345,7 +357,7 @@ const LS = {
 /** Versión mínima del script de Google que necesita esta app (ver apps-script/Code.gs). */
 const VERSION_SCRIPT_MIN = 5;
 /** Versión visible de la app (se ve en Más). Cambiarla junto con VERSION en sw.js. */
-const APP_VERSION = '2026-10-10.2';
+const APP_VERSION = '2026-10-13.1';
 const HOJAS = ['Ingresos', 'Gastos', 'Cuotas', 'Inversiones', 'Vencimientos', 'Objetivos', 'Historial'];
 const NUMERICOS = ['monto', 'montoCuota', 'cuotasTotales', 'cantidad', 'precioCompra', 'tcCompra', 'meta', 'saldoInicial', 'patrimonioARS', 'patrimonioUSD', 'dolar'];
 const TARJETAS = ['visa', 'mastercard'];
@@ -513,7 +525,13 @@ function vencimientosTodos() {
     }
   }
   const refsAuto = new Set(autos.map(a => a.ref));
-  return [...guardados.filter(v => !v.ref || !refsAuto.has(v.ref)), ...autos].filter(v => v.estado !== 'omitido').sort((a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0));
+  // La parte en dólares del resumen se paga junto con los pesos: si ya pagaste "Resumen Visa" en ese período, cuenta como pagada
+  const pagadaConPesos = v => {
+    if (v.estado === 'pagado' || v.moneda !== 'USD' || !/^Resumen .*\(d[oó]lares\)/i.test(v.concepto || '')) return false;
+    const nom = normTexto(v.concepto.replace(/\s*\(d[oó]lares\)/i, '')), cic = cicloActual(v.fecha);
+    return S.data.Gastos.some(g => g.ambito !== 'negocio' && normTexto(g.descripcion).startsWith(nom) && enCiclo(g.fecha, cic));
+  };
+  return [...guardados.filter(v => !v.ref || !refsAuto.has(v.ref)), ...autos].filter(v => v.estado !== 'omitido').map(v => (pagadaConPesos(v) ? { ...v, estado: 'pagado' } : v)).sort((a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0));
 }
 /** Movimientos normalizados en pesos: gastos (incluye cuotas) e ingresos. */
 function movimientos() {
@@ -1240,7 +1258,7 @@ function pendienteDelMes() {
   const plan = planDePagos();
   for (const p of plan) {
     if (!(p.falta > 0)) continue;
-    items.push({ k: 'plan:' + p.v.id, concepto: p.v.concepto, ars: p.falta, fecha: p.fecha, origen: p.pagado > 0 ? `Plan · pagaste ${fmtMon(p.pagado, 'ARS')} de ${fmtMon(p.plan, 'ARS')}` : 'Plan',
+    items.push({ k: 'plan:' + p.v.id, concepto: p.v.concepto, ars: p.falta, fecha: p.k === 'comida' ? c.hasta : p.fecha, origen: p.k === 'comida' ? `Presupuesto hasta el cobro · gastaste ${fmtMon(p.pagado, 'ARS')} de ${fmtMon(p.plan, 'ARS')}` : p.pagado > 0 ? `Plan · pagaste ${fmtMon(p.pagado, 'ARS')} de ${fmtMon(p.plan, 'ARS')}` : 'Plan',
       gasto: { categoria: p.k === 'comida' ? 'Supermercado' : 'Otros', descripcion: p.v.concepto, monto: Math.round(p.falta), moneda: 'ARS', medio: p.v.medio || 'debito', fijo: p.k === 'comida' ? 'no' : 'si', ambito: 'personal', devuelto: 'no' } });
   }
   const omitidos = refsOmitidas(c);
@@ -1845,19 +1863,27 @@ function renderMes() {
   $('#v-mes').innerHTML = `
     ${bannersAlerta(false)}
     ${botonesComprobante()}
+    <div class="card hero ${sobra < 0 ? 'bad' : ''}"><h2>💵 Hasta el cobro (${fmtDM(c.cobro)})<span class="sp"></span><span class="small muted">${diasCobro} día${diasCobro === 1 ? '' : 's'}</span></h2>
+      <div class="res num ${sobra >= 0 ? 'pos' : 'neg'}">${sobra >= 0 ? 'Te sobran' : 'Te faltan'} ${m(Math.abs(sobra))}</div>
+      <div class="row3" style="margin-bottom:0">
+        <div class="stat"><div class="l">Tenés</div><div class="v num">${m(t.total)}</div></div>
+        <div class="stat"><div class="l">Falta pagar</div><div class="v num neg">${m(peSin.total)}</div></div>
+        <div class="stat"><div class="l">Por día</div><div class="v num ${porDia > 0 ? 'pos' : 'neg'}">${m(Math.max(porDia, 0))}</div></div>
+      </div>
+      ${sobra < 0 ? `<p class="small neg" style="margin:8px 0 0">Con lo que tenés no alcanza para pagar todo: revisá qué pago podés pasar o si falta cargar algún ingreso o saldo.</p>` : ''}</div>
     <div class="mes-grid"><div class="mes-col">
-    <div class="card card-pend"><h2>⏳ Falta pagar hasta el cobro<span class="sp"></span><span class="mid num neg">${m(peSin.total)}</span></h2>
-      <div class="small" style="margin:-4px 0 8px">Tenés ${m(t.total)} en pesos · cuando pagues todo te ${sobra >= 0 ? `sobran <b class="pos">${m(sobra)}</b>` : `faltan <b class="neg">${m(-sobra)}</b>`} hasta el cobro (${fmtDM(c.cobro)}).</div>
-      <div class="list">${peSin.items.map(i => {
+    <div class="card card-pend"><h2>⏳ Falta pagar (${peSin.items.length})<span class="sp"></span><span class="mid num neg">${m(peSin.total)}</span></h2>
+      <div class="list">${peSin.items.map((i, idx) => {
         const esPlan = String(i.k || '').startsWith('plan:'), idPlan = esPlan ? i.k.slice(5) : '';
         const editar = i.venc ? `data-venc-edit ${keyV(i.venc)}` : esPlan ? `data-edit="Vencimientos" data-id="${esc(idPlan)}"` : `data-pagar-fijo="${esc(i.k)}"`;
         const borrar = i.venc ? `data-borrar-pend="venc" ${keyV(i.venc)}` : `data-borrar-pend="${esPlan ? 'plan' : 'fijo'}" data-k="${esc(i.k)}"`;
         const pagar = i.venc ? `<button class="btn sm okb" data-pagar ${keyV(i.venc)}>${i.venc.origen === 'ahorro' ? '✓ Separado' : '✓ Pagado'}</button>` : `<button class="btn sm okb" data-pagar-fijo="${esc(i.k)}">✓ Pagado</button>`;
         const dias = diffDays(hoyS, i.fecha), alerta = dias <= 3;
         const cuando = dias < 0 ? `⚠ venció hace ${-dias} día${dias === -1 ? '' : 's'}` : dias === 0 ? '⚠ vence hoy' : alerta ? `⚠ vence en ${dias} día${dias === 1 ? '' : 's'}` : fmtDM(i.fecha);
-        return filaBtn(editar, esc(i.concepto), `<span class="${alerta ? 'alerta' : 'neg'}">${m(i.ars)}</span>`, `<span class="${alerta ? 'alerta' : ''}">${cuando}</span> · ${i.origen}`,
-          `<div class="acc-pend">${pagar}<button class="btn sm" ${editar} aria-label="Editar ${esc(i.concepto)}">✏️</button><button class="btn sm" ${borrar} aria-label="Eliminar ${esc(i.concepto)}">🗑</button></div>`);
-      }).join('') || empty('No falta pagar nada en este período. 🎉')}</div>
+        const html = `<div class="pend-it"><button class="pend-main" ${editar}><span class="pt">${esc(i.concepto)}</span><span class="pa num ${alerta ? 'alerta' : 'neg'}">${m(i.ars)}</span></button>
+          <div class="pend-sub"><span class="s"><span class="${alerta ? 'alerta' : ''}">${cuando}</span> · ${i.origen}</span><span class="acc-pend">${pagar}<button class="btn sm" ${editar} aria-label="Editar ${esc(i.concepto)}">✏️</button><button class="btn sm" ${borrar} aria-label="Eliminar ${esc(i.concepto)}">🗑</button></span></div></div>`;
+        return idx === 6 && peSin.items.length > 7 ? `<details><summary class="small" style="padding:10px 2px;cursor:pointer">Ver ${peSin.items.length - 6} pago(s) más ▾</summary>${html}` : html;
+      }).join('') + (peSin.items.length > 7 ? '</details>' : '') || empty('No falta pagar nada en este período. 🎉')}</div>
       <p class="small muted" style="margin:8px 0 0"><span class="neg">Rojo</span>: lo que debés. <span class="alerta">Naranja</span>: vence en 3 días o menos. ✏️ cambia el monto (por ejemplo, el alquiler con el ajuste). 🗑 lo saca de este período. Todo se deshace con ↶.</p></div>
 
     ${cardComida(c, diasRest)}
